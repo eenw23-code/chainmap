@@ -74,11 +74,7 @@ const THEMES = {
   }
 };
 
-const SUGGESTIONS = [
-  "삼성전자","SK하이닉스","현대자동차","LG에너지솔루션","POSCO홀딩스",
-  "반도체","2차전지","디스플레이","카메라 모듈","전기차","조선","방산",
-  "K-뷰티","바이오","로봇","수소","태양광","반도체 소재","OLED",
-];
+const SUGGESTIONS = [];
 
 const CATEGORY_COLORS = [
   "#1a6b4a","#1a4a6b","#6b1a4a","#4a6b1a","#6b4a1a",
@@ -493,7 +489,8 @@ function App() {
           <div style={{fontSize:9,color:T.faint,letterSpacing:2}}>SUPPLY CHAIN INTELLIGENCE</div>
         </div>
 
-        {/* 검색창 + 자동완성 드롭다운 */}
+        {/* 검색창 + 자동완성 드롭다운 — 결과/로딩 중일 때만 헤더에 표시 */}
+        {(loading || data || error) && (
         <div ref={dropRef} style={{flex:1,maxWidth:480,position:"relative",marginLeft:24}} className="no-print">
           <div style={{display:"flex",gap:8}}>
             <input ref={inputRef} value={input} onChange={e=>{setInput(e.target.value);setShowDrop(true);}}
@@ -509,7 +506,7 @@ function App() {
               {loading?"분석 중...":"분석"}
             </button>
           </div>
-          {/* 드롭다운 */}
+          {/* 드롭다운 — 히스토리만 */}
           {showDrop && suggestions.length > 0 && (
             <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:60,background:T.dropBg,border:`1px solid ${T.dropBorder}`,borderRadius:8,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",zIndex:200,overflow:"hidden"}}>
               {history.length > 0 && input.trim() === "" && (
@@ -530,7 +527,9 @@ function App() {
             </div>
           )}
         </div>
+        )}
 
+        {(loading || data || error) && (
         <button onClick={()=>setShowSettings(v=>!v)} className="no-print" style={{
           background:showSettings?T.dartBg:T.inputBg,
           border:`1px solid ${showSettings?T.dartBorder:T.cardBorder}`,
@@ -538,6 +537,7 @@ function App() {
           borderRadius:8,padding:"8px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>
           ⚙ DART {dartKey?"✓":"미설정"}
         </button>
+        )}
 
         <button onClick={()=>setIsDark(v=>!v)} className="no-print" style={{
           background:T.toggleBg,color:T.toggleText,
@@ -598,16 +598,51 @@ function App() {
       {/* Main */}
       <div style={{padding:"24px 28px"}}>
         {!loading && !data && !error && (
-          <div style={{textAlign:"center",paddingTop:100}}>
-            <div style={{fontSize:72,marginBottom:20,opacity:0.1}}>⬡</div>
-            <div style={{fontSize:22,fontWeight:800,marginBottom:10,color:T.idleFg}}>공급망 인텔리전스 플랫폼</div>
-            <div style={{fontSize:14,color:T.idleSub,marginBottom:6}}>기업명 또는 섹터를 입력하면 전체 밸류체인을 자동 분석합니다</div>
-            <div style={{fontSize:13,color:T.idleFaint,marginBottom:28}}>삼성전자 · 현대자동차 · 반도체 · 2차전지 · K-뷰티 · 바이오 · 방산 · 조선</div>
-            {!dartKey && (
-              <div style={{display:"inline-block",padding:"12px 24px",background:T.hintBg,border:`1px solid ${T.hintBorder}`,borderRadius:10,fontSize:12,color:T.hintText}}>
-                💡 <b>⚙ DART</b>에서 API Key를 입력하면 국내 기업 재무를 실제 공시로 검증합니다
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"80vh",gap:0}}>
+            <div style={{fontSize:60,marginBottom:16,opacity:0.08}}>⬡</div>
+            <div style={{fontSize:24,fontWeight:800,marginBottom:8,color:T.idleFg}}>공급망 인텔리전스 플랫폼</div>
+            <div style={{fontSize:14,color:T.idleSub,marginBottom:32}}>기업명 또는 섹터를 입력하면 전체 밸류체인을 자동 분석합니다</div>
+
+            {/* 중앙 검색창 */}
+            <div ref={dropRef} style={{width:"100%",maxWidth:560,position:"relative",marginBottom:16}}>
+              <div style={{display:"flex",gap:8}}>
+                <input ref={inputRef} value={input} onChange={e=>{setInput(e.target.value);setShowDrop(true);}}
+                  onFocus={()=>setShowDrop(true)}
+                  onKeyDown={e=>{if(e.key==="Enter"&&!loading)analyze();if(e.key==="Escape")setShowDrop(false);}}
+                  placeholder="기업명 또는 섹터 (예: 삼성전자, 반도체, 2차전지)"
+                  style={{flex:1,background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"13px 18px",color:T.text,fontSize:15,outline:"none",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}/>
+                <button onClick={()=>analyze()} disabled={loading||!input.trim()} style={{
+                  background:loading?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
+                  color:"#fff",border:"none",borderRadius:10,padding:"13px 28px",
+                  fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",whiteSpace:"nowrap",
+                  boxShadow:loading?"none":"0 2px 8px rgba(37,99,235,0.3)"}}>
+                  분석
+                </button>
               </div>
-            )}
+              {/* 히스토리 드롭다운 */}
+              {showDrop && suggestions.length > 0 && (
+                <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:90,background:T.dropBg,border:`1px solid ${T.dropBorder}`,borderRadius:8,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",zIndex:200,overflow:"hidden"}}>
+                  <div style={{padding:"6px 12px 2px",fontSize:10,color:T.faint,fontWeight:700}}>최근 검색</div>
+                  {suggestions.map((s,i) => (
+                    <div key={i} onMouseDown={()=>analyze(s)} style={{padding:"9px 14px",fontSize:13,color:T.text,cursor:"pointer",display:"flex",alignItems:"center",gap:8,background:T.dropBg}}
+                      onMouseEnter={e=>e.currentTarget.style.background=T.dropHover}
+                      onMouseLeave={e=>e.currentTarget.style.background=T.dropBg}>
+                      <span style={{color:T.faint,fontSize:11}}>🕐</span>{s}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* DART 입력창 — 검색창 바로 아래 */}
+            <div style={{width:"100%",maxWidth:560,background:T.dartBg,border:`1px solid ${T.dartBorder}`,borderRadius:10,padding:"14px 18px"}}>
+              <div style={{fontSize:11,color:T.dartText,fontWeight:700,marginBottom:8}}>⚙ DART Open API Key <span style={{fontWeight:400,opacity:0.7}}>(선택 — 국내 기업 공시 재무 검증)</span></div>
+              <input value={dartKey} onChange={e=>setDartKey(e.target.value)}
+                placeholder="발급받은 DART API Key 입력 (40자리) · opendart.fss.or.kr에서 무료 발급"
+                type="password"
+                style={{width:"100%",background:T.cardBg,border:`1px solid ${T.dartBorder}`,borderRadius:8,padding:"9px 14px",color:T.text,fontSize:12,outline:"none"}}/>
+              {dartKey && <div style={{marginTop:6,fontSize:11,color:T.dartText}}>✓ 설정됨 — 다음 분석부터 적용</div>}
+            </div>
           </div>
         )}
 
