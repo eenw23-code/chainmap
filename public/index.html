@@ -7,26 +7,78 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #f4f6f9; color: #1a2540; font-family: 'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif; }
-input::placeholder { color: #aab0c0; }
+body { font-family: 'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #eef0f5; }
-::-webkit-scrollbar-thumb { background: #c0c8d8; border-radius: 3px; }
+@keyframes modalIn { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
 @media print {
   @page { size: A4 landscape; margin: 12mm; }
   .no-print { display: none !important; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .print-card { page-break-inside: avoid; break-inside: avoid; }
+  .print-row { page-break-inside: avoid; break-inside: avoid; }
 }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useCallback, useRef } = React;
+const { useState, useCallback, useRef, useEffect } = React;
+
+// ── 테마 ──────────────────────────────────────────────
+const THEMES = {
+  light: {
+    bg:"#f4f6f9", headerBg:"#fff", headerBorder:"#e2e8f0",
+    cardBg:"#fff", cardBorder:"#dde2ed", cardBorderHover:"#3b82f6",
+    rowBg:"#f8fafc", text:"#0f172a", subtext:"#64748b", faint:"#94a3b8",
+    inputBg:"#f8fafc", inputBorder:"#cbd5e1",
+    logoColor:"#2563eb", logoText:"#0f172a",
+    statBg:"#fff", statBorder:"#e2e8f0", statVal:"#2563eb",
+    legendBg:"#fff", legendBorder:"#e2e8f0",
+    dartBg:"#f0fdf4", dartBorder:"#bbf7d0", dartText:"#15803d",
+    dartCardBg:"#dcfce7", dartCardBorder:"#86efac", dartCardText:"#15803d",
+    dartStatBg:"#f0fdf4", dartStatBorder:"#86efac", dartStatVal:"#16a34a",
+    errorBg:"#fff5f5", errorBorder:"#fecaca",
+    idleFg:"#1e293b", idleSub:"#64748b", idleFaint:"#94a3b8",
+    hintBg:"#eff6ff", hintBorder:"#bfdbfe", hintText:"#3b82f6",
+    spinner:"#e2e8f0", spinnerTop:"#2563eb",
+    dot:"#e2e8f0", dotActive:"#2563eb",
+    toggleBg:"#1e293b", toggleText:"#f8fafc",
+    dropBg:"#fff", dropBorder:"#e2e8f0", dropHover:"#f1f5f9",
+    modalBg:"#fff", modalOverlay:"rgba(0,0,0,0.4)",
+    shadow:"0 1px 6px rgba(0,0,0,0.06)",
+  },
+  dark: {
+    bg:"#050c14", headerBg:"#0a1828", headerBorder:"#1e3048",
+    cardBg:"#0f1923", cardBorder:"#1e3048", cardBorderHover:"#4a9eff",
+    rowBg:"#080f18", text:"#e8f4ff", subtext:"#5a8aaa", faint:"#3a6a9a",
+    inputBg:"#0a1828", inputBorder:"#1e4a7a",
+    logoColor:"#4a9eff", logoText:"#e8f4ff",
+    statBg:"#080f18", statBorder:"#1e3048", statVal:"#4a9eff",
+    legendBg:"#080f18", legendBorder:"#1e3048",
+    dartBg:"#0d3a1a", dartBorder:"#1a6b2a", dartText:"#3adf7a",
+    dartCardBg:"#0d3a1a", dartCardBorder:"#1a6b2a", dartCardText:"#3adf7a",
+    dartStatBg:"#0a2a14", dartStatBorder:"#1a6b2a", dartStatVal:"#3adf7a",
+    errorBg:"#1a0a0a", errorBorder:"#4a1a1a",
+    idleFg:"#3a6a9a", idleSub:"#2a5a7a", idleFaint:"#1a3a5a",
+    hintBg:"#0a1828", hintBorder:"#1e3a5a", hintText:"#4a9eff",
+    spinner:"#1e3048", spinnerTop:"#4a9eff",
+    dot:"#1e3048", dotActive:"#4a9eff",
+    toggleBg:"#e8f4ff", toggleText:"#0f172a",
+    dropBg:"#0a1828", dropBorder:"#1e3048", dropHover:"#0f1f30",
+    modalBg:"#0a1828", modalOverlay:"rgba(0,0,0,0.7)",
+    shadow:"0 1px 6px rgba(0,0,0,0.4)",
+  }
+};
+
+const SUGGESTIONS = [
+  "삼성전자","SK하이닉스","현대자동차","LG에너지솔루션","POSCO홀딩스",
+  "반도체","2차전지","디스플레이","카메라 모듈","전기차","조선","방산",
+  "K-뷰티","바이오","로봇","수소","태양광","반도체 소재","OLED",
+];
 
 const CATEGORY_COLORS = [
   "#1a6b4a","#1a4a6b","#6b1a4a","#4a6b1a","#6b4a1a",
@@ -130,7 +182,84 @@ async function enrichWithDart(key, parsed, onProgress) {
 const fmt = n => n == null ? "-" : Math.abs(n) >= 10000 ? (n/10000).toFixed(1)+"조" : n.toLocaleString("ko-KR");
 const FLAG = { US:"🇺🇸", JP:"🇯🇵", CN:"🇨🇳", TW:"🇹🇼", DE:"🇩🇪", NL:"🇳🇱" };
 
-function CompanyCard({ company, periods }) {
+// ── 기업 상세 모달 ────────────────────────────────────
+function CompanyModal({ company, category, periods, T, onClose }) {
+  const { name, listed, exchange, country, tags, financials, notes, dartVerified } = company;
+  useEffect(() => {
+    const handler = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const rows = [
+    { label:"매출액", v: financials?.revenue, color:"#2563eb" },
+    { label:"영업이익", v: financials?.operatingProfit, color:"#16a34a" },
+    { label:"당기순이익", v: financials?.netIncome, color:"#7c3aed" },
+  ];
+
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:T.modalOverlay,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.modalBg,borderRadius:16,padding:32,maxWidth:480,width:"100%",animation:"modalIn 0.2s ease",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+        {/* 헤더 */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+          <div>
+            <div style={{fontSize:20,fontWeight:900,color:T.text,marginBottom:4}}>{name}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {listed && <span style={{background:"#dbeafe",color:"#1d4ed8",fontSize:11,padding:"2px 8px",borderRadius:4,fontWeight:700}}>{exchange||"상장"}</span>}
+              {country && <span style={{fontSize:13}}>{FLAG[country]||"🌐"} {country}</span>}
+              {dartVerified && <span style={{background:T.dartCardBg,border:`1px solid ${T.dartCardBorder}`,color:T.dartCardText,fontSize:11,padding:"2px 8px",borderRadius:4,fontWeight:700}}>DART 검증</span>}
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:T.subtext,lineHeight:1}}>×</button>
+        </div>
+
+        {/* 카테고리 */}
+        <div style={{marginBottom:16,fontSize:12,color:T.subtext}}>
+          카테고리: <span style={{fontWeight:700,color:T.text}}>{category.name}</span>
+          <span style={{marginLeft:8,color:T.faint}}>({({upstream:"상류",midstream:"중류",downstream:"하류",core:"핵심"})[category.position]||category.position})</span>
+        </div>
+
+        {/* 태그 */}
+        {tags?.length > 0 && (
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:20}}>
+            {tags.map((t,i)=><span key={i} style={{background:TAG_COLORS[t]||"#64748b",color:"#fff",fontSize:11,padding:"3px 8px",borderRadius:4,fontWeight:700}}>{t}</span>)}
+          </div>
+        )}
+
+        {/* 재무 테이블 */}
+        <div style={{background:T.rowBg,borderRadius:10,padding:16,marginBottom:16}}>
+          <div style={{fontSize:11,color:T.faint,fontWeight:700,marginBottom:10}}>(단위: 억원)</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:6}}>
+            <div style={{fontSize:11,color:T.faint,fontWeight:600}}>항목</div>
+            {periods.map((p,i)=><div key={i} style={{fontSize:11,color:T.faint,fontWeight:600,textAlign:"right"}}>{p}</div>)}
+          </div>
+          {rows.map(({label,v,color})=>(
+            <div key={label} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${T.cardBorder}`}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{width:10,height:10,borderRadius:2,background:color,display:"inline-block"}}/>
+                <span style={{fontSize:12,color:T.subtext}}>{label}</span>
+              </div>
+              {[0,1].map(i=>{
+                const val=v?.[i];
+                return <div key={i} style={{fontSize:13,fontWeight:700,textAlign:"right",color:val<0?"#dc2626":val==null?T.faint:T.text}}>{fmt(val)}</div>;
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* 특이사항 */}
+        {notes && (
+          <div style={{background:T.hintBg,border:`1px solid ${T.hintBorder}`,borderRadius:8,padding:12,fontSize:12,color:T.text,lineHeight:1.6}}>
+            <span style={{fontWeight:700,color:T.hintText}}>특이사항 </span>{notes}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── 기업 카드 ─────────────────────────────────────────
+function CompanyCard({ company, periods, T, category, onClickCompany }) {
   const { name, listed, exchange, country, tags, financials, notes, dartVerified } = company;
   const rows = [
     { v: financials?.revenue, bg:"#2563eb" },
@@ -138,19 +267,18 @@ function CompanyCard({ company, periods }) {
     { v: financials?.netIncome, bg:"#7c3aed" },
   ];
   return (
-    <div style={{
-      background:"#fff",
-      border:`1px solid ${dartVerified?"#86efac":"#dde2ed"}`,
+    <div className="print-card" onClick={()=>onClickCompany(company, category)} style={{
+      background:T.cardBg, border:`1px solid ${dartVerified?T.dartCardBorder:T.cardBorder}`,
       borderRadius:8, padding:"10px 12px", minWidth:158, maxWidth:198,
       flex:"0 0 auto", position:"relative", cursor:"pointer",
       transition:"all 0.2s", animation:"fadeIn 0.3s ease",
       boxShadow:"0 1px 4px rgba(0,0,0,0.06)",
     }}
-      onMouseEnter={e=>{e.currentTarget.style.borderColor="#3b82f6";e.currentTarget.style.boxShadow="0 2px 12px rgba(59,130,246,0.15)";}}
-      onMouseLeave={e=>{e.currentTarget.style.borderColor=dartVerified?"#86efac":"#dde2ed";e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.06)";}}>
-      {dartVerified && <div style={{position:"absolute",top:4,right:4,background:"#dcfce7",border:"1px solid #86efac",color:"#15803d",fontSize:8,padding:"1px 4px",borderRadius:3,fontWeight:800}}>DART</div>}
+      onMouseEnter={e=>{e.currentTarget.style.borderColor=T.cardBorderHover;e.currentTarget.style.boxShadow="0 2px 12px rgba(59,130,246,0.15)";e.currentTarget.style.transform="translateY(-2px)";}}
+      onMouseLeave={e=>{e.currentTarget.style.borderColor=dartVerified?T.dartCardBorder:T.cardBorder;e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.06)";e.currentTarget.style.transform="translateY(0)";}}>
+      {dartVerified && <div style={{position:"absolute",top:4,right:4,background:T.dartCardBg,border:`1px solid ${T.dartCardBorder}`,color:T.dartCardText,fontSize:8,padding:"1px 4px",borderRadius:3,fontWeight:800}}>DART</div>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-        <div style={{fontWeight:700,fontSize:12,color:"#0f172a",lineHeight:1.3,flex:1,paddingRight:dartVerified?28:0}}>{name}</div>
+        <div style={{fontWeight:700,fontSize:12,color:T.text,lineHeight:1.3,flex:1,paddingRight:dartVerified?28:0}}>{name}</div>
         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2,marginLeft:4}}>
           {listed && <span style={{background:"#dbeafe",color:"#1d4ed8",fontSize:9,padding:"1px 4px",borderRadius:3,fontWeight:600,whiteSpace:"nowrap"}}>{exchange||"상장"}</span>}
           {country && country!=="KR" && <span style={{fontSize:10}}>{FLAG[country]||"🌐"}</span>}
@@ -163,58 +291,62 @@ function CompanyCard({ company, periods }) {
       )}
       <div style={{display:"grid",gridTemplateColumns:"14px 1fr 1fr",gap:2,marginBottom:4}}>
         <div/>
-        {periods.map((p,i)=><div key={i} style={{fontSize:9,color:"#94a3b8",textAlign:"right",fontWeight:600}}>{p}</div>)}
+        {periods.map((p,i)=><div key={i} style={{fontSize:9,color:T.faint,textAlign:"right",fontWeight:600}}>{p}</div>)}
       </div>
       {rows.map(({v,bg},ri)=>(
         <div key={ri} style={{display:"grid",gridTemplateColumns:"14px 1fr 1fr",gap:2,marginBottom:3}}>
           <span style={{width:12,height:12,borderRadius:2,background:bg,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#fff",fontWeight:700}}>{ri+1}</span>
-          {[0,1].map(i=>{const val=v?.[i];return <div key={i} style={{fontSize:10,textAlign:"right",fontWeight:600,color:val<0?"#dc2626":val==null?"#cbd5e1":"#1e293b"}}>{fmt(val)}</div>;})}
+          {[0,1].map(i=>{const val=v?.[i];return <div key={i} style={{fontSize:10,textAlign:"right",fontWeight:600,color:val<0?"#dc2626":val==null?T.faint:T.text}}>{fmt(val)}</div>;})}
         </div>
       ))}
-      {notes && <div style={{marginTop:7,paddingTop:6,borderTop:"1px solid #f1f5f9",fontSize:9,color:"#64748b",lineHeight:1.4}}>{notes}</div>}
+      {notes && <div style={{marginTop:7,paddingTop:6,borderTop:`1px solid ${T.cardBorder}`,fontSize:9,color:T.subtext,lineHeight:1.4}}>{notes}</div>}
+      <div style={{marginTop:6,fontSize:9,color:T.faint,textAlign:"center",opacity:0.6}}>클릭하여 상세보기</div>
     </div>
   );
 }
 
-function CategoryRow({ category, periods, index }) {
+// ── 카테고리 행 ───────────────────────────────────────
+function CategoryRow({ category, periods, index, T, onClickCompany }) {
   const color = category.colorHex || CATEGORY_COLORS[index % CATEGORY_COLORS.length];
   const posLabel = {upstream:"▲ 상류",midstream:"◆ 중류",downstream:"▼ 하류",core:"★ 핵심"}[category.position]||category.position;
   return (
-    <div style={{marginBottom:20,animation:"fadeIn 0.4s ease"}}>
+    <div className="print-row" style={{marginBottom:20,animation:"fadeIn 0.4s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
         <div style={{background:color,color:"#fff",padding:"6px 14px",borderRadius:"6px 6px 0 0",fontSize:13,fontWeight:800,letterSpacing:2,minWidth:80,textAlign:"center"}}>{category.name}</div>
-        <div style={{fontSize:10,color:"#64748b",background:"#f1f5f9",padding:"3px 8px",borderRadius:4,border:"1px solid #e2e8f0"}}>{posLabel}</div>
-        <div style={{fontSize:10,color:"#94a3b8"}}>기업 {category.companies?.length||0}개</div>
+        <div style={{fontSize:10,color:T.subtext,background:T.rowBg,padding:"3px 8px",borderRadius:4,border:`1px solid ${T.cardBorder}`}}>{posLabel}</div>
+        <div style={{fontSize:10,color:T.faint}}>기업 {category.companies?.length||0}개</div>
       </div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:8,padding:"12px",background:"#f8fafc",borderRadius:"0 8px 8px 8px",border:`1px solid ${color}30`,borderLeft:`3px solid ${color}`}}>
-        {category.companies?.map((co,i)=><CompanyCard key={i} company={co} periods={periods}/>)}
-        {!category.companies?.length && <div style={{color:"#94a3b8",fontSize:12,padding:20}}>데이터 없음</div>}
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,padding:"12px",background:T.rowBg,borderRadius:"0 8px 8px 8px",border:`1px solid ${color}30`,borderLeft:`3px solid ${color}`}}>
+        {category.companies?.map((co,i)=><CompanyCard key={i} company={co} periods={periods} T={T} category={category} onClickCompany={onClickCompany}/>)}
+        {!category.companies?.length && <div style={{color:T.faint,fontSize:12,padding:20}}>데이터 없음</div>}
       </div>
     </div>
   );
 }
 
-function Legend({ periods }) {
+// ── 범례 ──────────────────────────────────────────────
+function Legend({ periods, T }) {
   return (
-    <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center",padding:"10px 16px",background:"#fff",border:"1px solid #e2e8f0",borderRadius:8,marginBottom:20,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
-      <span style={{fontSize:10,color:"#64748b",fontWeight:700}}>(단위: 억원)</span>
+    <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center",padding:"10px 16px",background:T.legendBg,border:`1px solid ${T.legendBorder}`,borderRadius:8,marginBottom:20}}>
+      <span style={{fontSize:10,color:T.subtext,fontWeight:700}}>(단위: 억원)</span>
       {[{n:1,l:"매출",bg:"#2563eb"},{n:2,l:"영업이익",bg:"#16a34a"},{n:3,l:"당기순익",bg:"#7c3aed"}].map(({n,l,bg})=>(
         <div key={n} style={{display:"flex",alignItems:"center",gap:4}}>
           <span style={{width:16,height:16,background:bg,borderRadius:3,color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700}}>{n}</span>
-          <span style={{fontSize:10,color:"#475569"}}>{l}</span>
+          <span style={{fontSize:10,color:T.subtext}}>{l}</span>
         </div>
       ))}
-      <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:8,borderLeft:"1px solid #e2e8f0",paddingLeft:12}}>
-        <span style={{background:"#dcfce7",border:"1px solid #86efac",color:"#15803d",fontSize:9,padding:"1px 5px",borderRadius:3,fontWeight:800}}>DART</span>
-        <span style={{fontSize:10,color:"#16a34a"}}>실제 공시 재무</span>
+      <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:8,borderLeft:`1px solid ${T.legendBorder}`,paddingLeft:12}}>
+        <span style={{background:T.dartCardBg,border:`1px solid ${T.dartCardBorder}`,color:T.dartCardText,fontSize:9,padding:"1px 5px",borderRadius:3,fontWeight:800}}>DART</span>
+        <span style={{fontSize:10,color:T.dartText}}>실제 공시 재무</span>
       </div>
       <div style={{marginLeft:"auto",display:"flex",gap:10}}>
-        {periods.map((p,i)=><span key={i} style={{fontSize:10,color:"#2563eb",fontWeight:700}}>{p}</span>)}
+        {periods.map((p,i)=><span key={i} style={{fontSize:10,color:T.statVal,fontWeight:700}}>{p}</span>)}
       </div>
     </div>
   );
 }
 
+// ── 메인 앱 ───────────────────────────────────────────
 function App() {
   const [input, setInput] = useState("");
   const [dartKey, setDartKey] = useState("");
@@ -225,14 +357,42 @@ function App() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [msgIdx, setMsgIdx] = useState(0);
+  const [isDark, setIsDark] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [showDrop, setShowDrop] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const timerRef = useRef(null);
+  const inputRef = useRef(null);
+  const dropRef = useRef(null);
 
-  const goHome = useCallback(() => {
-    setData(null); setError(null); setInput(""); setShowSettings(false);
+  const T = THEMES[isDark ? "dark" : "light"];
+
+  // 드롭다운 외부 클릭 닫기
+  useEffect(() => {
+    const handler = e => {
+      if (dropRef.current && !dropRef.current.contains(e.target)) setShowDrop(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const analyze = useCallback(async () => {
-    if (!input.trim()) return;
+  // 자동완성 후보 = 히스토리 + 기본 추천 (입력값 필터링)
+  const suggestions = input.trim().length > 0
+    ? [...new Set([...history, ...SUGGESTIONS])].filter(s => s.includes(input.trim()) && s !== input.trim()).slice(0, 8)
+    : [...new Set([...history, ...SUGGESTIONS])].slice(0, 8);
+
+  const goHome = useCallback(() => {
+    setData(null); setError(null); setInput(""); setShowSettings(false); setShowDrop(false);
+  }, []);
+
+  const analyze = useCallback(async (keyword) => {
+    const q = (keyword || input).trim();
+    if (!q) return;
+    setInput(q);
+    setShowDrop(false);
+    // 히스토리에 추가 (중복 제거, 최대 10개)
+    setHistory(prev => [q, ...prev.filter(h => h !== q)].slice(0, 10));
     setLoading(true); setError(null); setData(null); setDartProgress(null);
     let idx = 0;
     setLoadingMsg(LOADING_MSGS[0]);
@@ -248,7 +408,7 @@ function App() {
         body: JSON.stringify({
           model:"claude-sonnet-4-20250514", max_tokens:8000, system:SYSTEM_PROMPT,
           tools:[{type:"web_search_20250305",name:"web_search"}],
-          messages:[{role:"user",content:`분석 대상: ${input.trim()}\n\n전체 공급망(밸류체인)을 분석해줘. 상장사/비상장사 모두 포함, 국내외 주요 플레이어 빠짐없이, 최근 재무 데이터를 웹 검색으로 채워줘.`}],
+          messages:[{role:"user",content:`분석 대상: ${q}\n\n전체 공급망(밸류체인)을 분석해줘. 상장사/비상장사 모두 포함, 국내외 주요 플레이어 빠짐없이, 최근 재무 데이터를 웹 검색으로 채워줘.`}],
         }),
       });
       const result = await res.json();
@@ -281,40 +441,120 @@ function App() {
     }
   }, [input, dartKey]);
 
+  // 엑셀 내보내기
+  const exportExcel = useCallback(() => {
+    if (!data) return;
+    const rows = [["카테고리","포지션","기업명","상장여부","거래소","국가","태그","매출("+data.period?.[0]+"억)","매출("+data.period?.[1]+"억)","영업이익("+data.period?.[0]+")","영업이익("+data.period?.[1]+")","당기순이익("+data.period?.[0]+")","당기순이익("+data.period?.[1]+")","DART검증","특이사항"]];
+    data.categories?.forEach(cat => {
+      cat.companies?.forEach(co => {
+        rows.push([
+          cat.name, cat.position, co.name,
+          co.listed ? "상장" : "비상장",
+          co.exchange || "", co.country || "",
+          (co.tags||[]).join(", "),
+          co.financials?.revenue?.[0] ?? "",
+          co.financials?.revenue?.[1] ?? "",
+          co.financials?.operatingProfit?.[0] ?? "",
+          co.financials?.operatingProfit?.[1] ?? "",
+          co.financials?.netIncome?.[0] ?? "",
+          co.financials?.netIncome?.[1] ?? "",
+          co.dartVerified ? "✓" : "",
+          co.notes || "",
+        ]);
+      });
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = rows[0].map((_,i) => ({ wch: [12,10,16,8,8,6,20,12,12,12,12,12,12,8,30][i]||12 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, data.target || "밸류체인");
+    XLSX.writeFile(wb, `CHAINMAP_${data.target}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }, [data]);
+
   const dartCount = data?.categories?.flatMap(c=>c.companies||[]).filter(co=>co.dartVerified).length||0;
   const totalCos = data?.categories?.reduce((s,c)=>s+(c.companies?.length||0),0)||0;
 
   return (
-    <div style={{minHeight:"100vh",background:"#f4f6f9"}}>
+    <div style={{minHeight:"100vh",background:T.bg,color:T.text,transition:"background 0.3s"}}>
+      {/* 기업 상세 모달 */}
+      {selectedCompany && (
+        <CompanyModal
+          company={selectedCompany}
+          category={selectedCategory}
+          periods={data?.period||["'23","'24"]}
+          T={T}
+          onClose={()=>{setSelectedCompany(null);setSelectedCategory(null);}}
+        />
+      )}
+
       {/* Header */}
-      <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"14px 28px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
-        {/* Logo — 클릭 시 홈으로 */}
+      <div style={{background:T.headerBg,borderBottom:`1px solid ${T.headerBorder}`,padding:"14px 28px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",position:"sticky",top:0,zIndex:100,boxShadow:T.shadow}}>
         <div onClick={goHome} style={{cursor:"pointer",userSelect:"none"}} className="no-print">
-          <div style={{fontSize:20,fontWeight:900,color:"#2563eb",letterSpacing:3}}>CHAIN<span style={{color:"#0f172a"}}>MAP</span></div>
-          <div style={{fontSize:9,color:"#94a3b8",letterSpacing:2}}>SUPPLY CHAIN INTELLIGENCE</div>
+          <div style={{fontSize:20,fontWeight:900,color:T.logoColor,letterSpacing:3}}>CHAIN<span style={{color:T.logoText}}>MAP</span></div>
+          <div style={{fontSize:9,color:T.faint,letterSpacing:2}}>SUPPLY CHAIN INTELLIGENCE</div>
         </div>
 
-        <div style={{flex:1,maxWidth:480,display:"flex",gap:8,marginLeft:24}} className="no-print">
-          <input value={input} onChange={e=>setInput(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&!loading&&analyze()}
-            placeholder="기업명 또는 섹터 (예: 삼성전자, 반도체, 2차전지)"
-            style={{flex:1,background:"#f8fafc",border:"1px solid #cbd5e1",borderRadius:8,padding:"9px 14px",color:"#0f172a",fontSize:13,outline:"none"}}/>
-          <button onClick={analyze} disabled={loading||!input.trim()} style={{
-            background:loading?"#e2e8f0":"linear-gradient(135deg,#3b82f6,#2563eb)",
-            color:loading?"#94a3b8":"#fff",border:"none",borderRadius:8,padding:"9px 24px",
-            fontSize:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",whiteSpace:"nowrap",
-            boxShadow:loading?"none":"0 2px 8px rgba(37,99,235,0.3)"}}>
-            {loading?"분석 중...":"분석"}
-          </button>
+        {/* 검색창 + 자동완성 드롭다운 */}
+        <div ref={dropRef} style={{flex:1,maxWidth:480,position:"relative",marginLeft:24}} className="no-print">
+          <div style={{display:"flex",gap:8}}>
+            <input ref={inputRef} value={input} onChange={e=>{setInput(e.target.value);setShowDrop(true);}}
+              onFocus={()=>setShowDrop(true)}
+              onKeyDown={e=>{if(e.key==="Enter"&&!loading)analyze();if(e.key==="Escape")setShowDrop(false);}}
+              placeholder="기업명 또는 섹터 (예: 삼성전자, 반도체, 2차전지)"
+              style={{flex:1,background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 14px",color:T.text,fontSize:13,outline:"none"}}/>
+            <button onClick={()=>analyze()} disabled={loading||!input.trim()} style={{
+              background:loading?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
+              color:"#fff",border:"none",borderRadius:8,padding:"9px 24px",
+              fontSize:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",whiteSpace:"nowrap",
+              boxShadow:loading?"none":"0 2px 8px rgba(37,99,235,0.3)"}}>
+              {loading?"분석 중...":"분석"}
+            </button>
+          </div>
+          {/* 드롭다운 */}
+          {showDrop && suggestions.length > 0 && (
+            <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:60,background:T.dropBg,border:`1px solid ${T.dropBorder}`,borderRadius:8,boxShadow:"0 4px 20px rgba(0,0,0,0.12)",zIndex:200,overflow:"hidden"}}>
+              {history.length > 0 && input.trim() === "" && (
+                <div style={{padding:"6px 12px 2px",fontSize:10,color:T.faint,fontWeight:700}}>최근 검색</div>
+              )}
+              {suggestions.map((s,i) => (
+                <div key={i} onMouseDown={()=>analyze(s)} style={{
+                  padding:"9px 14px",fontSize:13,color:T.text,cursor:"pointer",
+                  display:"flex",alignItems:"center",gap:8,
+                  background:T.dropBg,
+                }}
+                  onMouseEnter={e=>e.currentTarget.style.background=T.dropHover}
+                  onMouseLeave={e=>e.currentTarget.style.background=T.dropBg}>
+                  <span style={{color:T.faint,fontSize:11}}>{history.includes(s)?"🕐":"🔍"}</span>
+                  {s}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <button onClick={()=>setShowSettings(v=>!v)} className="no-print" style={{
-          background:showSettings?"#f0fdf4":"#f8fafc",
-          border:`1px solid ${showSettings?"#86efac":"#e2e8f0"}`,
-          color:showSettings?"#15803d":"#64748b",
+          background:showSettings?T.dartBg:T.inputBg,
+          border:`1px solid ${showSettings?T.dartBorder:T.cardBorder}`,
+          color:showSettings?T.dartText:T.subtext,
           borderRadius:8,padding:"8px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>
-          ⚙ DART {dartKey?"✓ 연동":"미설정"}
+          ⚙ DART {dartKey?"✓":"미설정"}
         </button>
+
+        <button onClick={()=>setIsDark(v=>!v)} className="no-print" style={{
+          background:T.toggleBg,color:T.toggleText,
+          border:"none",borderRadius:8,padding:"8px 14px",
+          fontSize:13,cursor:"pointer",fontWeight:700}}>
+          {isDark?"☀️":"🌙"}
+        </button>
+
+        {data && (
+          <button onClick={exportExcel} className="no-print" style={{
+            background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",
+            border:"none",borderRadius:8,padding:"8px 16px",fontSize:12,
+            cursor:"pointer",fontWeight:700,whiteSpace:"nowrap",
+            boxShadow:"0 2px 8px rgba(22,163,74,0.3)"}}>
+            📊 엑셀
+          </button>
+        )}
 
         {data && (
           <button onClick={()=>window.print()} className="no-print" style={{
@@ -322,24 +562,24 @@ function App() {
             border:"none",borderRadius:8,padding:"8px 16px",fontSize:12,
             cursor:"pointer",fontWeight:700,whiteSpace:"nowrap",
             boxShadow:"0 2px 8px rgba(220,38,38,0.3)"}}>
-            📄 PDF 저장
+            📄 PDF
           </button>
         )}
 
         {data && (
           <div style={{marginLeft:"auto",textAlign:"right"}}>
-            <div style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>{data.target}</div>
-            <div style={{fontSize:10,color:"#64748b"}}>{data.summary}</div>
+            <div style={{fontSize:16,fontWeight:900,color:T.text}}>{data.target}</div>
+            <div style={{fontSize:10,color:T.subtext}}>{data.summary}</div>
           </div>
         )}
       </div>
 
       {/* DART Settings */}
       {showSettings && (
-        <div style={{background:"#f0fdf4",borderBottom:"1px solid #bbf7d0",padding:"14px 28px",display:"flex",alignItems:"flex-start",gap:20,flexWrap:"wrap"}}>
+        <div style={{background:T.dartBg,borderBottom:`1px solid ${T.dartBorder}`,padding:"14px 28px",display:"flex",alignItems:"flex-start",gap:20,flexWrap:"wrap"}}>
           <div>
-            <div style={{fontSize:11,color:"#15803d",fontWeight:700,marginBottom:4}}>DART Open API Key</div>
-            <div style={{fontSize:10,color:"#4ade80",lineHeight:1.8,color:"#166534"}}>
+            <div style={{fontSize:11,color:T.dartText,fontWeight:700,marginBottom:4}}>DART Open API Key</div>
+            <div style={{fontSize:10,color:T.dartText,lineHeight:1.8,opacity:0.8}}>
               1. opendart.fss.or.kr 접속 → 인증키 신청 (무료, 즉시 발급)<br/>
               2. 이메일 수신 후 아래 입력<br/>
               3. 분석 시 국내 기업 재무를 실제 공시로 자동 교체
@@ -349,71 +589,61 @@ function App() {
             <input value={dartKey} onChange={e=>setDartKey(e.target.value)}
               placeholder="발급받은 DART API Key 입력 (40자리)"
               type="password"
-              style={{width:"100%",background:"#fff",border:"1px solid #86efac",borderRadius:8,padding:"9px 14px",color:"#0f172a",fontSize:12,outline:"none"}}/>
-            {dartKey && <div style={{marginTop:6,fontSize:11,color:"#15803d"}}>✓ 설정됨 — 다음 분석부터 적용</div>}
+              style={{width:"100%",background:T.cardBg,border:`1px solid ${T.dartBorder}`,borderRadius:8,padding:"9px 14px",color:T.text,fontSize:12,outline:"none"}}/>
+            {dartKey && <div style={{marginTop:6,fontSize:11,color:T.dartText}}>✓ 설정됨 — 다음 분석부터 적용</div>}
           </div>
         </div>
       )}
 
       {/* Main */}
       <div style={{padding:"24px 28px"}}>
-
-        {/* Idle */}
         {!loading && !data && !error && (
           <div style={{textAlign:"center",paddingTop:100}}>
-            <div style={{fontSize:72,marginBottom:20,opacity:0.15}}>⬡</div>
-            <div style={{fontSize:22,fontWeight:800,marginBottom:10,color:"#1e293b"}}>공급망 인텔리전스 플랫폼</div>
-            <div style={{fontSize:14,color:"#64748b",marginBottom:6}}>기업명 또는 섹터를 입력하면 전체 밸류체인을 자동 분석합니다</div>
-            <div style={{fontSize:13,color:"#94a3b8",marginBottom:28}}>삼성전자 · 현대자동차 · 반도체 · 2차전지 · K-뷰티 · 바이오 · 방산 · 조선</div>
+            <div style={{fontSize:72,marginBottom:20,opacity:0.1}}>⬡</div>
+            <div style={{fontSize:22,fontWeight:800,marginBottom:10,color:T.idleFg}}>공급망 인텔리전스 플랫폼</div>
+            <div style={{fontSize:14,color:T.idleSub,marginBottom:6}}>기업명 또는 섹터를 입력하면 전체 밸류체인을 자동 분석합니다</div>
+            <div style={{fontSize:13,color:T.idleFaint,marginBottom:28}}>삼성전자 · 현대자동차 · 반도체 · 2차전지 · K-뷰티 · 바이오 · 방산 · 조선</div>
             {!dartKey && (
-              <div style={{display:"inline-block",padding:"12px 24px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,fontSize:12,color:"#3b82f6"}}>
-                💡 <b>⚙ DART 설정</b>에서 API Key를 입력하면 국내 기업 재무를 실제 공시로 검증합니다
+              <div style={{display:"inline-block",padding:"12px 24px",background:T.hintBg,border:`1px solid ${T.hintBorder}`,borderRadius:10,fontSize:12,color:T.hintText}}>
+                💡 <b>⚙ DART</b>에서 API Key를 입력하면 국내 기업 재무를 실제 공시로 검증합니다
               </div>
             )}
           </div>
         )}
 
-        {/* Loading */}
         {loading && (
           <div style={{textAlign:"center",paddingTop:100}}>
-            <div style={{display:"inline-block",width:60,height:60,marginBottom:24,border:"3px solid #e2e8f0",borderTop:"3px solid #2563eb",borderRadius:"50%",animation:"spin 0.9s linear infinite"}}/>
-            <div style={{fontSize:16,color:"#2563eb",fontWeight:700,marginBottom:8}}>{loadingMsg}</div>
+            <div style={{display:"inline-block",width:60,height:60,marginBottom:24,border:`3px solid ${T.spinner}`,borderTop:`3px solid ${T.spinnerTop}`,borderRadius:"50%",animation:"spin 0.9s linear infinite"}}/>
+            <div style={{fontSize:16,color:T.spinnerTop,fontWeight:700,marginBottom:8}}>{loadingMsg}</div>
             {dartProgress && (
               <div style={{maxWidth:380,margin:"16px auto 0"}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                  <span style={{fontSize:12,color:"#15803d"}}>📡 DART 공시 매칭</span>
-                  <span style={{fontSize:12,color:"#16a34a"}}>{dartProgress.done} / {dartProgress.total}개</span>
+                  <span style={{fontSize:12,color:T.dartText}}>📡 DART 공시 매칭</span>
+                  <span style={{fontSize:12,color:T.dartText}}>{dartProgress.done} / {dartProgress.total}개</span>
                 </div>
-                <div style={{height:6,background:"#dcfce7",borderRadius:3,overflow:"hidden"}}>
+                <div style={{height:6,background:T.dartBg,borderRadius:3,overflow:"hidden"}}>
                   <div style={{height:"100%",borderRadius:3,background:"linear-gradient(90deg,#16a34a,#4ade80)",width:`${(dartProgress.done/dartProgress.total)*100}%`,transition:"width 0.3s"}}/>
                 </div>
               </div>
             )}
             <div style={{marginTop:28,display:"flex",justifyContent:"center",gap:7}}>
               {LOADING_MSGS.map((_,i)=>(
-                <div key={i} style={{width:7,height:7,borderRadius:"50%",background:i===msgIdx?"#2563eb":"#e2e8f0",transition:"background 0.3s"}}/>
+                <div key={i} style={{width:7,height:7,borderRadius:"50%",background:i===msgIdx?T.dotActive:T.dot,transition:"background 0.3s"}}/>
               ))}
             </div>
           </div>
         )}
 
-        {/* Error */}
         {error && !loading && (
-          <div style={{background:"#fff5f5",border:"1px solid #fecaca",borderRadius:10,padding:"20px 24px",color:"#dc2626",maxWidth:640}}>
+          <div style={{background:T.errorBg,border:`1px solid ${T.errorBorder}`,borderRadius:10,padding:"20px 24px",color:"#dc2626",maxWidth:640}}>
             <div style={{fontWeight:700,marginBottom:6,fontSize:14}}>⚠ 분석 오류</div>
             <div style={{fontSize:12,lineHeight:1.6,color:"#b91c1c"}}>{error}</div>
-            {error.includes("API Key") && (
-              <div style={{marginTop:10,fontSize:11,color:"#ef4444"}}>
-                → config.json 파일을 열어 YOUR_API_KEY_HERE 자리에 실제 API Key를 입력하고 서버를 재시작하세요.
-              </div>
-            )}
           </div>
         )}
 
-        {/* Results */}
         {data && !loading && (
           <div style={{animation:"fadeIn 0.5s ease"}}>
-            <Legend periods={data.period||["'23","'24"]}/>
+            <Legend periods={data.period||["'23","'24"]} T={T}/>
             <div style={{display:"flex",gap:12,marginBottom:24,flexWrap:"wrap"}}>
               {[
                 {label:"카테고리",val:data.categories?.length||0},
@@ -423,17 +653,18 @@ function App() {
                 ...(dartCount>0?[{label:"DART 검증",val:dartCount,green:true}]:[]),
               ].map(({label,val,green})=>(
                 <div key={label} style={{
-                  background:green?"#f0fdf4":"#fff",                  border:`1px solid ${green?"#86efac":"#e2e8f0"}`,
+                  background:green?T.dartStatBg:T.statBg,
+                  border:`1px solid ${green?T.dartStatBorder:T.statBorder}`,
                   borderRadius:10,padding:"12px 20px",textAlign:"center",
-                  boxShadow:"0 1px 3px rgba(0,0,0,0.04)",
                 }}>
-                  <div style={{fontSize:24,fontWeight:900,color:green?"#16a34a":"#2563eb"}}>{val}</div>
-                  <div style={{fontSize:10,color:green?"#15803d":"#64748b"}}>{label}</div>
+                  <div style={{fontSize:24,fontWeight:900,color:green?T.dartStatVal:T.statVal}}>{val}</div>
+                  <div style={{fontSize:10,color:T.subtext}}>{label}</div>
                 </div>
               ))}
             </div>
             {data.categories?.map((cat,i)=>(
-              <CategoryRow key={i} category={cat} periods={data.period||["'23","'24"]} index={i}/>
+              <CategoryRow key={i} category={cat} periods={data.period||["'23","'24"]} index={i} T={T}
+                onClickCompany={(co,cat)=>{setSelectedCompany(co);setSelectedCategory(cat);}}/>
             ))}
           </div>
         )}
