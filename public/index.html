@@ -143,9 +143,14 @@ async function dartGetCorpCode(key, name) {
   try {
     const tryNames = [name, normalizeName(name)].filter((v,i,a)=>a.indexOf(v)===i);
     for (const n of tryNames) {
-      const r = await dartFetch(`${DART_BASE}/list.json?crtfc_key=${key}&corp_name=${encodeURIComponent(n)}&page_count=5&sort=date&sort_mth=desc`);
+      // bgn_de=20190101: 기본 최근 1개월 → 6년치로 확장, page_count=20으로 후보 다수 확보
+      const r = await dartFetch(`${DART_BASE}/list.json?crtfc_key=${key}&corp_name=${encodeURIComponent(n)}&bgn_de=20190101&page_count=20&sort=date&sort_mth=desc`);
       const j = await r.json();
-      if (j.status === "000" && j.list?.length) return j.list[0].corp_code;
+      if (j.status === "000" && j.list?.length) {
+        // 정확히 일치하는 corp_name 우선 선택, 없으면 첫 번째
+        const exact = j.list.find(x => x.corp_name === n || normalizeName(x.corp_name) === normalizeName(n));
+        return (exact || j.list[0]).corp_code;
+      }
     }
     return null;
   } catch { return null; }
