@@ -70,10 +70,15 @@ MODE A — COMPANY INPUT (기업명)
 ══════════════════════════════════════
 Map the value chain strictly from official audit/business report disclosures (감사보고서 / 사업보고서 "사업의 내용"). Do NOT invent or estimate.
 
-STEP 1 — FIND SOURCE
-Search DART (dart.fss.or.kr) for the company's most recent 사업보고서 or 감사보고서 "사업의 내용".
-NOTE: 비상장 기업도 외부감사 대상이면 DART에 감사보고서가 존재한다. 반드시 DART에서 먼저 검색할 것.
-If no DART filing exists at all, use the most similar listed competitor's report as proxy and state this in sourceNote.
+STEP 1 — FIND SOURCE (MANDATORY)
+You MUST search DART (dart.fss.or.kr) directly before anything else.
+Search query: site:dart.fss.or.kr "{company name}" 감사보고서 OR 사업보고서
+
+CRITICAL RULES:
+- 비상장 기업도 자산 120억 이상이면 외부감사 의무 대상이며 DART에 감사보고서가 존재한다.
+- DART에서 찾지 못했다고 바로 포기하지 말 것. 회사명 변형(예: (주)한신체인, 한신체인㈜ 등)으로 재검색할 것.
+- 유사 상장사 보고서로 대체하는 것은 DART에 공시 자체가 존재하지 않음을 확인한 후 최후의 수단으로만 허용.
+- DART 공시를 찾았으면 반드시 해당 보고서를 기반으로 분석할 것. 절대 proxy로 대체하지 말 것.
 
 STEP 2 — EXTRACT only from:
 - 원재료 및 생산 → suppliers
@@ -455,8 +460,11 @@ function App() {
 먼저 입력값이 기업명인지 섹터/산업명인지 판단해줘.
 
 [기업명인 경우 — MODE A]
-DART(dart.fss.or.kr)에서 해당 기업의 최신 사업보고서 또는 감사보고서 "사업의 내용" 섹션을 검색해줘. 비상장 기업도 외부감사 대상이면 DART에 감사보고서가 있으니 반드시 먼저 탐색해줘. DART 공시가 전혀 없을 때만 유사 상장사 보고서를 대체 참조해줘.
-원재료 항목, 판매경로/주요매출처 항목, 경쟁현황 항목, 신규사업 항목을 바탕으로 PE 투자 관점의 밸류체인을 매핑해줘. 공시에 명시된 사실만 사용하고, 추정은 금지.
+반드시 DART(dart.fss.or.kr)에서 "${q}" 감사보고서 또는 사업보고서를 직접 검색해줘.
+비상장 기업이더라도 외부감사 대상(자산 120억 이상)이면 DART에 감사보고서가 반드시 존재한다.
+"${q}", "(주)${q}", "${q}㈜" 등 다양한 표기로 DART를 재검색해줘.
+DART에서 실제 보고서를 찾은 경우 절대로 유사 상장사 보고서로 대체하지 말고, 찾은 보고서를 직접 분석해줘.
+원재료, 판매경로/주요매출처, 경쟁현황, 신규사업 항목을 바탕으로 PE 투자 관점의 밸류체인을 매핑해줘. 공시에 명시된 사실만 사용하고 추정은 금지.
 
 [섹터/산업명인 경우 — MODE B]
 해당 산업의 전통적 밸류체인(원재료 공급 → 소재/부품 가공 → 핵심 제조 → 유통/판매 → 최종소비자) 프레임워크로 분석해줘.
