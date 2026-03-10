@@ -207,14 +207,16 @@ async function dartGetReportText(key, corpName) {
     for (const pblntf_ty of ["A", "F"]) {
       const filingR = await dartFetch(`${DART_BASE}/list.json?crtfc_key=${key}&corp_code=${corpCode}&pblntf_ty=${pblntf_ty}&page_count=10&sort=date&sort_mth=desc`);
       const filingJ = await filingR.json();
-      filing = filingJ.list?.find(f =>
-        f.report_nm.includes("사업보고서") || f.report_nm.includes("감사보고서")
-      );
+      const list = filingJ.list || [];
+      // 1순위: 사업보고서/감사보고서 명시
+      filing = list.find(f => f.report_nm.includes("사업보고서") || f.report_nm.includes("감사보고서"));
+      // 2순위: "보고서" 포함하는 가장 최근 공시
+      if (!filing) filing = list.find(f => f.report_nm.includes("보고서"));
+      // 3순위: 해당 pblntf_ty 내 가장 최근 공시
+      if (!filing && list.length > 0) filing = list[0];
       if (filing) break;
     }
     if (!filing) return { text: null, error: "DART에서 사업보고서/감사보고서를 찾을 수 없습니다" };
-
-    // zip은 CORS 이슈 있을 수 있어서 프록시 경유
     const docR = await dartFetch(`${DART_BASE}/document.json?crtfc_key=${key}&rcept_no=${filing.rcept_no}`);
     const docBuf = await docR.arrayBuffer();
 
@@ -259,12 +261,19 @@ async function dartGetFullText(key, corpName) {
     for (const pblntf_ty of ["A", "F"]) {
       const filingR = await dartFetch(`${DART_BASE}/list.json?crtfc_key=${key}&corp_code=${corpCode}&pblntf_ty=${pblntf_ty}&page_count=10&sort=date&sort_mth=desc`);
       const filingJ = await filingR.json();
-      filing = filingJ.list?.find(f =>
-        f.report_nm.includes("사업보고서") || f.report_nm.includes("감사보고서")
-      );
+      const list = filingJ.list || [];
+      filing = list.find(f => f.report_nm.includes("사업보고서") || f.report_nm.includes("감사보고서"));
+      if (!filing) filing = list.find(f => f.report_nm.includes("보고서"));
+      if (!filing && list.length > 0) filing = list[0];
       if (filing) break;
     }
     if (!filing) return { text: null, error: "DART에서 사업보고서/감사보고서를 찾을 수 없습니다" };
+
+    // 감사보고서만 있는 비상장사 → 공급망 서술 없음, 즉시 반환
+    const isAuditOnly = filing.report_nm.includes("감사보고서") && !filing.report_nm.includes("사업보고서");
+    if (isAuditOnly) {
+      return { text: null, isAuditOnly: true, reportName: filing.report_nm, error: "감사보고서" };
+    }
 
     const docR = await dartFetch(`${DART_BASE}/document.json?crtfc_key=${key}&rcept_no=${filing.rcept_no}`);
     const docBuf = await docR.arrayBuffer();
@@ -579,40 +588,47 @@ function App() {
     setHistory(prev => [q, ...prev.filter(h => h !== q)].slice(0, 10));
     setLoading(true); setError(null); setData(null); setDartProgress(null);
     try {
-      // ── DART 전문 조회 → ValueChainMapper 직접 전달 ──
+      // ── 대상 기업 + 유사 상장사 전문 병렬 조회 ──
       let dartReportText = null;
       let dartReportName = null;
       let dartFetchError = null;
-
-      if (dartKey.trim()) {
-        try {
-          const fullData = await dartGetFullText(dartKey.trim(), q);
-          if (fullData.text) {
-            dartReportText = fullData.text;
-            dartReportName = `${fullData.reportName} (${fullData.reportDate}) — ${fullData.fileCount}개 서술 파일`;
-          } else {
-            dartFetchError = fullData.error || "DART 전문 조회 실패";
-          }
-        } catch(e) {
-          dartFetchError = e.message;
-        }
-      }
-
-      // 유사 상장사 원문 병렬 조회
-      // 대상 기업 원문 없으면 1차 출처 → 전문(dartGetFullText), 있으면 보조 출처 → 30K(dartGetReportText)
       let similarTexts = [];
-      if (dartKey.trim() && similarInput.trim()) {
-        const similarNames = similarInput.split("/").map(s=>s.trim()).filter(Boolean);
-        const fetchFn = !dartReportText
-          ? (n) => dartGetFullText(dartKey.trim(), n).catch(()=>null)   // 1차 출처: 전문
-          : (n) => dartGetReportText(dartKey.trim(), n).catch(()=>null); // 보조 출처: 30K
-        const results = await Promise.all(similarNames.map(fetchFn));
-        similarTexts = results.map((r, i) => ({
-          name: similarNames[i],
-          text: r?.text || null,
-          reportName: r?.reportName ? `${r.reportName} (${r.reportDate})` : null,
-        })).filter(r => r.text);
+
+      const similarNames = dartKey.trim() && similarInput.trim()
+        ? similarInput.split("/").map(s=>s.trim()).filter(Boolean)
+        : [];
+
+      // 대상 기업 + 유사 상장사 전부 전문으로 동시에 가져오기
+      const [mainResult, ...similarResults] = await Promise.all([
+        dartKey.trim()
+          ? dartGetFullText(dartKey.trim(), q).catch(e => ({ text: null, error: e.message }))
+          : Promise.resolve({ text: null, error: "DART Key 없음" }),
+        ...similarNames.map(n => dartGetFullText(dartKey.trim(), n).catch(() => null)),
+      ]);
+
+      // 대상 기업 결과 처리
+      if (mainResult?.text) {
+        dartReportText = mainResult.text;
+        dartReportName = `${mainResult.reportName} (${mainResult.reportDate}) — ${mainResult.fileCount}개 서술 파일`;
+      } else if (mainResult?.isAuditOnly) {
+        // 감사보고서만 있는 비상장사 — 유사 상장사 없으면 분석 불가
+        if (similarNames.length === 0) {
+          throw new Error(`분석 불가: "${q}"는 비상장사로 감사보고서(${mainResult.reportName})만 제출합니다.\n\n공시된 정보를 통해 공급망을 분석할 수 없습니다. 유사 상장사를 입력하세요.\n예) 씨피시스템, 레인보우로보틱스`);
+        }
+        dartFetchError = "감사보고서 — 유사 상장사 원문으로 대체";
+      } else {
+        dartFetchError = mainResult?.error || "DART 전문 조회 실패";
       }
+
+      // 유사 상장사 결과 처리
+      // 대상 기업 원문 있으면 보조 출처 → 30K로 truncate, 없으면 1차 출처 → 전문 그대로
+      similarTexts = similarResults.map((r, i) => ({
+        name: similarNames[i],
+        text: r?.text
+          ? (dartReportText ? r.text.slice(0, 30000) : r.text)
+          : null,
+        reportName: r?.reportName ? `${r.reportName} (${r.reportDate})` : null,
+      })).filter(r => r.text);
 
       // Claude에게 보낼 메시지 구성
       const similarSection = similarTexts.length > 0
