@@ -38,7 +38,7 @@ app.get('/api/dart/proxy', async (req, res) => {
     const contentType = r.headers.get('content-type') || 'application/octet-stream';
     res.set('Content-Type', contentType);
     const buf = Buffer.from(await r.arrayBuffer());
-    res.send(buf);
+    res.status(r.status).send(buf);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
