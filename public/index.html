@@ -86,39 +86,118 @@ const TAG_COLORS = {
   "모듈":"#16a085","소재":"#8e44ad","장비":"#2980b9","부품":"#27ae60",
   "완성품":"#c0392b","패키징":"#d35400",
 };
-const LOADING_MSGS = [
-  "🔍 밸류체인 구조 분석 중...","🌐 글로벌 공급망 플레이어 탐색 중...",
-  "📊 재무 데이터 수집 중 (상장/비상장)...","🏭 Upstream 기업 식별 중...",
-  "🔗 Downstream 관계사 매핑 중...","💹 최근 2개년 실적 정리 중...",
-  "⚡ 특이사항 및 이슈 분석 중...","🗺️ 밸류체인 맵 생성 중...",
-];
-const SYSTEM_PROMPT = `You are an expert financial research analyst specializing in global supply chain analysis.
-When given a company name or sector, analyze the COMPLETE value chain from upstream to downstream.
-Return ONLY a valid JSON object (no markdown, no backticks, no preamble). Use this EXACT structure:
+const LOADING_MSG = "정상적으로 분석 중입니다. 잠시만 기다려 주세요.";
+const SYSTEM_PROMPT = `You are a PE investment analyst. First determine whether the input is a COMPANY NAME or a SECTOR/INDUSTRY keyword.
+
+══════════════════════════════════════
+MODE A — COMPANY INPUT (기업명)
+══════════════════════════════════════
+Map the value chain strictly from official audit/business report disclosures (감사보고서 / 사업보고서 "사업의 내용"). Do NOT invent or estimate.
+
+STEP 1 — FIND SOURCE
+Search DART (dart.fss.or.kr) or the web for the company's most recent 사업보고서 "사업의 내용".
+If unlisted (비상장), use the most similar listed competitor's report as proxy and state this in sourceNote.
+
+STEP 2 — EXTRACT only from:
+- 원재료 및 생산 → suppliers
+- 판매 경로 / 주요 매출처 → customers
+- 경쟁 현황 / 시장 현황 → competitors
+- 신규사업 / 인접 사업 → adjacent
+
+STEP 3 — BUILD analystNote for MODE A using ONLY:
+(a) DART 사업보고서 주석 (재무제표 주석):
+    - 매출처 집중도: 상위 고객 매출 비중 (예: "상위 1개사 매출 비중 67%")
+    - 특수관계자 거래: 계열사 내부거래 규모
+    - 주요 계약 및 우발채무
+(b) Web search — 최근 1~2년 팩트 기반 이슈:
+    - 주요 수주/계약 체결 공시
+    - 규제 변화 (정부 정책, 인증, 환경규제)
+    - 기술 변화 (대체재 등장, 공정 전환)
+    - 핵심 리스크 이벤트 (소송, 원재료 가격 급등 등)
+→ 각 항목마다 출처 명시 (보고서명+연도 또는 언론사+날짜)
+→ 추정/의견 금지. 확인된 사실만.
+
+position values: supplier | target | competitor | customer | adjacent
+- target: the company itself (1 category, 1 company only)
+- notes: facts from disclosures only. No estimation.
+- basis: which section and exact wording
+- sourceNote: report name, year, proxy status
+
+══════════════════════════════════════
+MODE B — SECTOR INPUT (섹터/산업)
+══════════════════════════════════════
+Map the value chain using the traditional industry analysis framework:
+원재료 공급 → 소재/부품 가공 → 핵심 제조 → 유통/판매 → 최종소비자
+
+RULES for MODE B:
+- Slight estimation is allowed BUT must be academically grounded (Porter's Value Chain, industry reports, academic literature)
+- basis field MUST cite the academic/industry rationale (e.g. "Porter(1985) value chain framework — 원재료 단계", "IEA 2023 배터리 공급망 보고서")
+- List major players at each stage. Include all significant players regardless of size.
+- sourceNote: state "섹터 분석 모드 — [참조 프레임워크/근거]"
+- position values for sector mode: supplier | manufacturer | distributor | customer | adjacent
+- notes: brief factual description of the company's role in this value chain stage
+
+STEP — BUILD analystNote for MODE B using web search:
+- 해당 섹터의 현재 구조적 이슈 (공급망 재편, 지역화, 기술 전환 등)
+- 밸류체인 내 병목 구간 또는 마진 집중 구간 (산업 보고서 근거)
+- PE 투자 관점에서 주목할 단계 또는 플레이어 유형 (근거 명시)
+→ 각 항목마다 출처 명시 (보고서명+연도 또는 언론사+날짜)
+→ 추정/의견 금지. 출처 있는 사실만.
+
+══════════════════════════════════════
+SHARED JSON STRUCTURE (both modes)
+══════════════════════════════════════
+Return ONLY valid JSON (no markdown, no backticks, no preamble):
 {
   "target": "분석 대상명",
+  "mode": "company",
   "period": ["'23", "'24"],
-  "summary": "한 줄 산업 요약",
+  "summary": "한 줄 요약",
+  "sourceNote": "참조 출처 명시",
+  "analystNote": {
+    "items": [
+      {
+        "type": "concentration",
+        "label": "매출처 집중도",
+        "content": "상위 1개사(삼성전자) 매출 비중 67% (2023 사업보고서 주석 제25호)",
+        "source": "2023 사업보고서 재무제표 주석",
+        "sourceType": "dart"
+      },
+      {
+        "type": "issue",
+        "label": "최근 이슈",
+        "content": "2024년 3월 중국산 원재료 수입 관세 25% 부과 — 원가 구조 영향 불가피",
+        "source": "산업통상자원부 고시 2024-45호",
+        "sourceType": "web"
+      }
+    ]
+  },
   "categories": [
     {
       "name": "카테고리명",
       "colorHex": "#2D6A4F",
-      "position": "upstream",
+      "position": "supplier",
+      "basis": "근거 명시 (공시 섹션 또는 학술/산업 근거)",
       "companies": [
         {
-          "name": "기업명 (공식 상호 그대로)",
+          "name": "기업명 (공식 상호)",
           "listed": true,
           "exchange": "KOSPI",
           "country": "KR",
-          "tags": ["태그1","태그2"],
-          "financials": {"revenue": [12345, 13000],"operatingProfit": [1200, 1500],"netIncome": [900, 1100]},
-          "notes": "특이사항"
+          "tags": ["태그1"],
+          "financials": {"revenue": [null, null],"operatingProfit": [null, null],"netIncome": [null, null]},
+          "notes": ""
         }
       ]
     }
   ]
 }
-RULES: values in 억원; null for unknown (not 0); 4-10 companies per category; cover KR+global; position: upstream|midstream|downstream|core; return ONLY JSON.`;
+
+analystNote.items type values: concentration | related_party | contract | regulation | technology | risk | bottleneck | investment_focus
+- Each item MUST have source. No source = do not include.
+- Each item MUST have sourceType: "dart" (DART 공시 기반) | "web" (인터넷 출처) | "estimate" (추정 — MODE B 섹터 분석에서만 허용)
+- financials: always null (leave for DART enrichment). For non-KR companies, always null regardless of available data — do NOT fill from web search or estimation.
+- return ONLY JSON`;
 
 const DART_BASE = "https://opendart.fss.or.kr/api";
 async function dartGetCorpCode(key, name) {
@@ -217,10 +296,15 @@ function CompanyModal({ company, category, periods, T, onClose }) {
         </div>
 
         {/* 카테고리 */}
-        <div style={{marginBottom:16,fontSize:12,color:T.subtext}}>
+        <div style={{marginBottom:category.basis?8:16,fontSize:12,color:T.subtext}}>
           카테고리: <span style={{fontWeight:700,color:T.text}}>{category.name}</span>
-          <span style={{marginLeft:8,color:T.faint}}>({({upstream:"상류",midstream:"중류",downstream:"하류",core:"핵심"})[category.position]||category.position})</span>
+          <span style={{marginLeft:8,color:T.faint}}>({({supplier:"공급사",target:"분석대상",competitor:"경쟁사",customer:"매출처",adjacent:"인접",manufacturer:"제조",distributor:"유통"})[category.position]||category.position})</span>
         </div>
+        {category.basis && (
+          <div style={{marginBottom:16,background:T.hintBg,border:`1px solid ${T.hintBorder}`,borderRadius:6,padding:"6px 10px",fontSize:11,color:T.subtext,lineHeight:1.5}}>
+            <span style={{fontWeight:700,color:T.hintText}}>📋 공시 근거 </span>{category.basis}
+          </div>
+        )}
 
         {/* 태그 */}
         {tags?.length > 0 && (
@@ -230,25 +314,33 @@ function CompanyModal({ company, category, periods, T, onClose }) {
         )}
 
         {/* 재무 테이블 */}
-        <div style={{background:T.rowBg,borderRadius:10,padding:16,marginBottom:16}}>
-          <div style={{fontSize:11,color:T.faint,fontWeight:700,marginBottom:10}}>(단위: 억원)</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:6}}>
-            <div style={{fontSize:11,color:T.faint,fontWeight:600}}>항목</div>
-            {periods.map((p,i)=><div key={i} style={{fontSize:11,color:T.faint,fontWeight:600,textAlign:"right"}}>{p}</div>)}
+        {company.country && company.country !== "KR" ? (
+          <div style={{background:T.rowBg,borderRadius:10,padding:16,marginBottom:16,textAlign:"center"}}>
+            <div style={{fontSize:13,color:T.faint,marginBottom:4}}>🌐</div>
+            <div style={{fontSize:12,color:T.subtext,fontWeight:600}}>해외 기업 — 재무 데이터 미제공</div>
+            <div style={{fontSize:11,color:T.faint,marginTop:4}}>국내 DART 공시 대상이 아닙니다</div>
           </div>
-          {rows.map(({label,v,color})=>(
-            <div key={label} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${T.cardBorder}`}}>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{width:10,height:10,borderRadius:2,background:color,display:"inline-block"}}/>
-                <span style={{fontSize:12,color:T.subtext}}>{label}</span>
-              </div>
-              {[0,1].map(i=>{
-                const val=v?.[i];
-                return <div key={i} style={{fontSize:13,fontWeight:700,textAlign:"right",color:val<0?"#dc2626":val==null?T.faint:T.text}}>{fmt(val)}</div>;
-              })}
+        ) : (
+          <div style={{background:T.rowBg,borderRadius:10,padding:16,marginBottom:16}}>
+            <div style={{fontSize:11,color:T.faint,fontWeight:700,marginBottom:10}}>(단위: 억원)</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:6}}>
+              <div style={{fontSize:11,color:T.faint,fontWeight:600}}>항목</div>
+              {periods.map((p,i)=><div key={i} style={{fontSize:11,color:T.faint,fontWeight:600,textAlign:"right"}}>{p}</div>)}
             </div>
-          ))}
-        </div>
+            {rows.map(({label,v,color})=>(
+              <div key={label} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${T.cardBorder}`}}>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{width:10,height:10,borderRadius:2,background:color,display:"inline-block"}}/>
+                  <span style={{fontSize:12,color:T.subtext}}>{label}</span>
+                </div>
+                {[0,1].map(i=>{
+                  const val=v?.[i];
+                  return <div key={i} style={{fontSize:13,fontWeight:700,textAlign:"right",color:val<0?"#dc2626":val==null?T.faint:T.text}}>{fmt(val)}</div>;
+                })}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* 특이사항 */}
         {notes && (
@@ -311,7 +403,7 @@ function CompanyCard({ company, periods, T, category, onClickCompany }) {
 // ── 카테고리 행 ───────────────────────────────────────
 function CategoryRow({ category, periods, index, T, onClickCompany }) {
   const color = category.colorHex || CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-  const posLabel = {upstream:"▲ 상류",midstream:"◆ 중류",downstream:"▼ 하류",core:"★ 핵심"}[category.position]||category.position;
+  const posLabel = {supplier:"📦 공급사",target:"🎯 분석대상",competitor:"⚔ 경쟁사",customer:"🛒 매출처",adjacent:"🔀 인접",manufacturer:"🏭 제조",distributor:"🚚 유통"}[category.position]||category.position;
   return (
     <div className="print-row" style={{marginBottom:20,animation:"fadeIn 0.4s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
@@ -319,10 +411,83 @@ function CategoryRow({ category, periods, index, T, onClickCompany }) {
         <div style={{fontSize:10,color:T.subtext,background:T.rowBg,padding:"3px 8px",borderRadius:4,border:`1px solid ${T.cardBorder}`}}>{posLabel}</div>
         <div style={{fontSize:10,color:T.faint}}>기업 {category.companies?.length||0}개</div>
       </div>
+      {category.basis && (
+        <div style={{fontSize:10,color:T.subtext,marginBottom:6,padding:"4px 10px",background:T.hintBg,border:`1px solid ${T.hintBorder}`,borderRadius:4,display:"inline-block",maxWidth:"100%"}}>
+          📋 {category.basis}
+        </div>
+      )}
       <div style={{display:"flex",flexWrap:"wrap",gap:8,padding:"12px",background:T.rowBg,borderRadius:"0 8px 8px 8px",border:`1px solid ${color}30`,borderLeft:`3px solid ${color}`}}>
         {category.companies?.map((co,i)=><CompanyCard key={i} company={co} periods={periods} T={T} category={category} onClickCompany={onClickCompany}/>)}
         {!category.companies?.length && <div style={{color:T.faint,fontSize:12,padding:20}}>데이터 없음</div>}
       </div>
+    </div>
+  );
+}
+
+// ── 애널리스트 노트 ───────────────────────────────────
+const TYPE_META = {
+  concentration: { icon:"📊", label:"매출처 집중도", color:"#7c3aed", bg:"#f5f3ff", border:"#ddd6fe" },
+  related_party:  { icon:"🔗", label:"특수관계자 거래", color:"#b45309", bg:"#fffbeb", border:"#fde68a" },
+  contract:       { icon:"📝", label:"주요 계약", color:"#0369a1", bg:"#f0f9ff", border:"#bae6fd" },
+  regulation:     { icon:"⚖️", label:"규제 변화", color:"#dc2626", bg:"#fff5f5", border:"#fecaca" },
+  technology:     { icon:"⚡", label:"기술 변화", color:"#059669", bg:"#f0fdf4", border:"#bbf7d0" },
+  risk:           { icon:"⚠️", label:"리스크", color:"#dc2626", bg:"#fff5f5", border:"#fecaca" },
+  bottleneck:     { icon:"🔴", label:"병목 구간", color:"#9a3412", bg:"#fff7ed", border:"#fed7aa" },
+  investment_focus:{ icon:"🎯", label:"투자 주목 구간", color:"#1d4ed8", bg:"#eff6ff", border:"#bfdbfe" },
+};
+const SOURCE_TYPE_COLOR = {
+  dart:     "#0f172a",
+  web:      "#1d4ed8",
+  estimate: "#dc2626",
+};
+const SOURCE_TYPE_LABEL = {
+  dart:     "DART",
+  web:      "웹",
+  estimate: "추정",
+};
+function AnalystNotePanel({ items, T }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div style={{marginBottom:20,border:`1px solid ${T.cardBorder}`,borderRadius:10,overflow:"hidden",animation:"fadeIn 0.4s ease"}}>
+      <div onClick={()=>setOpen(v=>!v)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",background:T.cardBg,cursor:"pointer",userSelect:"none"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:15}}>🧠</span>
+          <span style={{fontSize:13,fontWeight:800,color:T.text}}>애널리스트 노트</span>
+          <div style={{display:"flex",gap:6,marginLeft:4}}>
+            {[["dart","DART","#0f172a"],["web","웹출처","#1d4ed8"],["estimate","추정","#dc2626"]].map(([,label,color])=>(
+              <span key={label} style={{fontSize:10,color,fontWeight:700}}>● {label}</span>
+            ))}
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,color:T.faint}}>{items.length}개 항목</span>
+          <span style={{fontSize:13,color:T.subtext}}>{open?"▲":"▼"}</span>
+        </div>
+      </div>
+      {open && (
+        <div style={{padding:"12px 16px",background:T.rowBg,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:10}}>
+          {items.map((item, i) => {
+            const meta = TYPE_META[item.type] || { icon:"📌", label:item.type, color:T.subtext, bg:T.cardBg, border:T.cardBorder };
+            const contentColor = SOURCE_TYPE_COLOR[item.sourceType] || T.text;
+            const sourceLabel = SOURCE_TYPE_LABEL[item.sourceType];
+            return (
+              <div key={i} style={{background:meta.bg,border:`1px solid ${meta.border}`,borderRadius:8,padding:"10px 14px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                  <span style={{fontSize:13}}>{meta.icon}</span>
+                  <span style={{fontSize:10,fontWeight:800,color:meta.color,textTransform:"uppercase",letterSpacing:1}}>{item.label||meta.label}</span>
+                  {sourceLabel && (
+                    <span style={{marginLeft:"auto",fontSize:9,fontWeight:700,color:contentColor,border:`1px solid ${contentColor}`,borderRadius:3,padding:"1px 5px",opacity:0.8}}>{sourceLabel}</span>
+                  )}
+                </div>
+                <div style={{fontSize:12,color:contentColor,lineHeight:1.6,marginBottom:6,fontWeight:item.sourceType==="dart"?600:400}}>{item.content}</div>
+                {item.source && (
+                  <div style={{fontSize:10,color:contentColor,opacity:0.7,fontStyle:"italic"}}>출처: {item.source}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -355,11 +520,9 @@ function App() {
   const [dartKey, setDartKey] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [loadingMsg, setLoadingMsg] = useState("");
   const [dartProgress, setDartProgress] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [msgIdx, setMsgIdx] = useState(0);
   const [isDark, setIsDark] = useState(false);
   const [history, setHistory] = useState([]);
   const [showDrop, setShowDrop] = useState(false);
@@ -397,13 +560,6 @@ function App() {
     // 히스토리에 추가 (중복 제거, 최대 10개)
     setHistory(prev => [q, ...prev.filter(h => h !== q)].slice(0, 10));
     setLoading(true); setError(null); setData(null); setDartProgress(null);
-    let idx = 0;
-    setLoadingMsg(LOADING_MSGS[0]);
-    timerRef.current = setInterval(() => {
-      idx = (idx+1) % LOADING_MSGS.length;
-      setMsgIdx(idx);
-      setLoadingMsg(LOADING_MSGS[idx]);
-    }, 1800);
     try {
       const res = await fetch("/api/v1/messages", {
         method:"POST",
@@ -411,7 +567,18 @@ function App() {
         body: JSON.stringify({
           model:"claude-sonnet-4-20250514", max_tokens:20000, system:SYSTEM_PROMPT,
           tools:[{type:"web_search_20250305",name:"web_search"}],
-          messages:[{role:"user",content:`분석 대상: ${q}\n\n전체 공급망(밸류체인)을 분석해줘. 상장사/비상장사 모두 포함, 국내외 주요 플레이어 빠짐없이, 최근 재무 데이터를 웹 검색으로 채워줘.`}],
+          messages:[{role:"user",content:`분석 대상: ${q}
+
+먼저 입력값이 기업명인지 섹터/산업명인지 판단해줘.
+
+[기업명인 경우 — MODE A]
+DART(dart.fss.or.kr) 또는 웹에서 해당 기업의 최신 사업보고서 "사업의 내용" 섹션을 검색해줘. 비상장이면 가장 유사한 상장 경쟁사의 사업보고서를 대체 참조해줘.
+원재료 항목, 판매경로/주요매출처 항목, 경쟁현황 항목, 신규사업 항목을 바탕으로 PE 투자 관점의 밸류체인을 매핑해줘. 공시에 명시된 사실만 사용하고, 추정은 금지.
+
+[섹터/산업명인 경우 — MODE B]
+해당 산업의 전통적 밸류체인(원재료 공급 → 소재/부품 가공 → 핵심 제조 → 유통/판매 → 최종소비자) 프레임워크로 분석해줘.
+학술적으로 타당한 산업 분석 근거(Porter Value Chain, 주요 산업 보고서 등)를 basis에 명시해줘.
+각 단계별 주요 플레이어를 국내외 포함하여 나열해줘. 규모 필터 없이 해당 단계의 주요 플레이어를 모두 포함해줘.`}],
         }),
       });
       const result = await res.json();
@@ -484,29 +651,59 @@ function App() {
   // 엑셀 내보내기
   const exportExcel = useCallback(() => {
     if (!data) return;
-    const rows = [["카테고리","포지션","기업명","상장여부","거래소","국가","태그","매출("+data.period?.[0]+"억)","매출("+data.period?.[1]+"억)","영업이익("+data.period?.[0]+")","영업이익("+data.period?.[1]+")","당기순이익("+data.period?.[0]+")","당기순이익("+data.period?.[1]+")","DART검증","특이사항"]];
+    const wb = XLSX.utils.book_new();
+
+    // 시트1: 밸류체인 기업 목록
+    const p = data.period || ["'23","'24"];
+    const rows = [["카테고리","포지션","공시근거","기업명","상장여부","거래소","국가","태그",
+      `매출(${p[0]},억)`,`매출(${p[1]},억)`,`영업이익(${p[0]})`,`영업이익(${p[1]})`,
+      `당기순이익(${p[0]})`,`당기순이익(${p[1]})`,`DART검증`,"특이사항"]];
     data.categories?.forEach(cat => {
       cat.companies?.forEach(co => {
         rows.push([
-          cat.name, cat.position, co.name,
-          co.listed ? "상장" : "비상장",
-          co.exchange || "", co.country || "",
+          cat.name, cat.position, cat.basis||"",
+          co.name, co.listed?"상장":"비상장",
+          co.exchange||"", co.country||"",
           (co.tags||[]).join(", "),
-          co.financials?.revenue?.[0] ?? "",
-          co.financials?.revenue?.[1] ?? "",
-          co.financials?.operatingProfit?.[0] ?? "",
-          co.financials?.operatingProfit?.[1] ?? "",
-          co.financials?.netIncome?.[0] ?? "",
-          co.financials?.netIncome?.[1] ?? "",
-          co.dartVerified ? "✓" : "",
-          co.notes || "",
+          co.financials?.revenue?.[0]??"",
+          co.financials?.revenue?.[1]??"",
+          co.financials?.operatingProfit?.[0]??"",
+          co.financials?.operatingProfit?.[1]??"",
+          co.financials?.netIncome?.[0]??"",
+          co.financials?.netIncome?.[1]??"",
+          co.dartVerified?"✓":"",
+          co.notes||"",
         ]);
       });
     });
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"] = rows[0].map((_,i) => ({ wch: [12,10,16,8,8,6,20,12,12,12,12,12,12,8,30][i]||12 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, data.target || "밸류체인");
+    const ws1 = XLSX.utils.aoa_to_sheet(rows);
+    ws1["!cols"] = [14,10,30,18,8,8,6,20,10,10,10,10,10,10,8,30].map(wch=>({wch}));
+    XLSX.utils.book_append_sheet(wb, ws1, "밸류체인");
+
+    // 시트2: 애널리스트 노트
+    if (data.analystNote?.items?.length > 0) {
+      const noteRows = [["유형","항목","내용","출처","출처유형"]];
+      data.analystNote.items.forEach(item => {
+        noteRows.push([item.type||"", item.label||"", item.content||"", item.source||"", item.sourceType||""]);
+      });
+      const ws2 = XLSX.utils.aoa_to_sheet(noteRows);
+      ws2["!cols"] = [14,16,60,30,10].map(wch=>({wch}));
+      XLSX.utils.book_append_sheet(wb, ws2, "애널리스트노트");
+    }
+
+    // 시트3: 분석 개요
+    const infoRows = [
+      ["분석 대상", data.target||""],
+      ["모드", data.mode||""],
+      ["요약", data.summary||""],
+      ["참조 출처", data.sourceNote||""],
+      ["분석 기간", (data.period||[]).join(", ")],
+      ["분석일", new Date().toLocaleDateString("ko-KR")],
+    ];
+    const ws3 = XLSX.utils.aoa_to_sheet(infoRows);
+    ws3["!cols"] = [{wch:14},{wch:60}];
+    XLSX.utils.book_append_sheet(wb, ws3, "개요");
+
     XLSX.writeFile(wb, `CHAINMAP_${data.target}_${new Date().toISOString().slice(0,10)}.xlsx`);
   }, [data]);
 
@@ -618,6 +815,32 @@ function App() {
         )}
       </div>
 
+      {/* 고정 범례 서브헤더 */}
+      {data && (
+        <div style={{background:T.headerBg,borderBottom:`1px solid ${T.headerBorder}`,padding:"7px 28px",display:"flex",alignItems:"center",gap:20,flexWrap:"wrap",boxShadow:"none"}} className="no-print">
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <span style={{fontSize:10,color:T.faint,fontWeight:700}}>재무</span>
+            {[{n:1,l:"매출",bg:"#2563eb"},{n:2,l:"영업이익",bg:"#16a34a"},{n:3,l:"당기순익",bg:"#7c3aed"}].map(({n,l,bg})=>(
+              <div key={n} style={{display:"flex",alignItems:"center",gap:4}}>
+                <span style={{width:16,height:16,background:bg,borderRadius:3,color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700}}>{n}</span>
+                <span style={{fontSize:10,color:T.subtext}}>{l}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{width:1,height:16,background:T.headerBorder}}/>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <span style={{fontSize:10,color:T.faint,fontWeight:700}}>출처</span>
+            {[["#0f172a","DART"],["#1d4ed8","웹출처"],["#dc2626","추정"]].map(([color,label])=>(
+              <div key={label} style={{display:"flex",alignItems:"center",gap:4}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:color,display:"inline-block"}}/>
+                <span style={{fontSize:10,color,fontWeight:600}}>{label}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{marginLeft:"auto",fontSize:10,color:T.faint}}>(단위: 억원)</div>
+        </div>
+      )}
+
       {/* DART Settings */}
       {showSettings && (
         <div style={{background:T.dartBg,borderBottom:`1px solid ${T.dartBorder}`,padding:"14px 28px",display:"flex",alignItems:"flex-start",gap:20,flexWrap:"wrap"}}>
@@ -693,7 +916,7 @@ function App() {
         {loading && (
           <div style={{textAlign:"center",paddingTop:100}}>
             <div style={{display:"inline-block",width:60,height:60,marginBottom:24,border:`3px solid ${T.spinner}`,borderTop:`3px solid ${T.spinnerTop}`,borderRadius:"50%",animation:"spin 0.9s linear infinite"}}/>
-            <div style={{fontSize:16,color:T.spinnerTop,fontWeight:700,marginBottom:8}}>{loadingMsg}</div>
+            <div style={{fontSize:16,color:T.spinnerTop,fontWeight:700,marginBottom:8}}>{LOADING_MSG}</div>
             {dartProgress && (
               <div style={{maxWidth:380,margin:"16px auto 0"}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
@@ -705,11 +928,6 @@ function App() {
                 </div>
               </div>
             )}
-            <div style={{marginTop:28,display:"flex",justifyContent:"center",gap:7}}>
-              {LOADING_MSGS.map((_,i)=>(
-                <div key={i} style={{width:7,height:7,borderRadius:"50%",background:i===msgIdx?T.dotActive:T.dot,transition:"background 0.3s"}}/>
-              ))}
-            </div>
           </div>
         )}
 
@@ -722,7 +940,19 @@ function App() {
 
         {data && !loading && (
           <div style={{animation:"fadeIn 0.5s ease"}}>
-            <Legend periods={data.period||["'23","'24"]} T={T}/>
+            {data.sourceNote && (
+              <div style={{background:T.hintBg,border:`1px solid ${T.hintBorder}`,borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"flex-start",gap:8}}>
+                <span style={{fontSize:14,flexShrink:0}}>📄</span>
+                <div>
+                  <span style={{fontSize:11,fontWeight:700,color:T.hintText}}>참조 출처 </span>
+                  <span style={{fontSize:11,color:T.text}}>{data.sourceNote}</span>
+                </div>
+              </div>
+            )}
+            {data.analystNote?.items?.length > 0 && (
+              <AnalystNotePanel items={data.analystNote.items} T={T} />
+            )}
+            
             <div style={{display:"flex",gap:12,marginBottom:24,flexWrap:"wrap"}}>
               {[
                 {label:"카테고리",val:data.categories?.length||0},
