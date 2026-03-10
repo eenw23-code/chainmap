@@ -63,12 +63,7 @@ const TAG_COLORS = {
   "모듈":"#16a085","소재":"#8e44ad","장비":"#2980b9","부품":"#27ae60",
   "완성품":"#c0392b","패키징":"#d35400",
 };
-const LOADING_MSGS = [
-  "🔍 밸류체인 구조 분석 중...","🌐 글로벌 공급망 플레이어 탐색 중...",
-  "📊 재무 데이터 수집 중 (상장/비상장)...","🏭 Upstream 기업 식별 중...",
-  "🔗 Downstream 관계사 매핑 중...","💹 최근 2개년 실적 정리 중...",
-  "⚡ 특이사항 및 이슈 분석 중...","🗺️ 밸류체인 맵 생성 중...",
-];
+const LOADING_MSG = "정상적으로 분석이 진행중입니다...";
 const SYSTEM_PROMPT = `You are a PE investment analyst specializing in Korean supply chain research.
 
 Determine whether the input is a COMPANY NAME (MODE A) or a SECTOR/INDUSTRY keyword (MODE B).
@@ -179,47 +174,6 @@ async function dartGetFinancials(key, corpCode, year) {
     }
     return null;
   } catch { return null; }
-}
-
-// 유사 상장사용 — 30,000자 (보조 출처)
-async function dartGetReportText(key, corpName) {
-  try {
-    const corpCode = await dartGetCorpCode(key, corpName);
-    if (!corpCode) return { text: null, error: "기업을 DART에서 찾을 수 없습니다" };
-    const filingR = await dartFetch(`${DART_BASE}/list.json?crtfc_key=${key}&corp_code=${corpCode}&page_count=20&sort=date&sort_mth=desc`);
-    const filingJ = await filingR.json();
-    const list = filingJ.list || [];
-    const filing = list.find(f => f.report_nm.includes("사업보고서"))
-                || list.find(f => f.report_nm.includes("감사보고서"))
-                || list.find(f => f.report_nm.includes("보고서"))
-                || (list.length > 0 ? list[0] : null);
-    if (!filing) return { text: null, error: "DART에서 공시를 찾을 수 없습니다" };
-    const docR = await dartFetch(`${DART_BASE}/document.json?crtfc_key=${key}&rcept_no=${filing.rcept_no}`);
-    const docBuf = await docR.arrayBuffer();
-    // zip magic bytes 확인 (PK\x03\x04)
-    const magic = new Uint8Array(docBuf.slice(0, 4));
-    if (magic[0] !== 0x50 || magic[1] !== 0x4B) {
-      return { text: null, error: "문서가 zip 형식이 아닙니다" };
-    }
-    const zip = await JSZip.loadAsync(docBuf);
-    let allText = "";
-    for (const [, file] of Object.entries(zip.files)) {
-      const name = file.name.toLowerCase();
-      if (!name.endsWith(".xml") && !name.endsWith(".html") && !name.endsWith(".htm")) continue;
-      try {
-        const rawBuf = await file.async("arraybuffer");
-        let content;
-        try {
-          content = new TextDecoder("euc-kr").decode(rawBuf);
-          if (!/[\uAC00-\uD7A3]/.test(content)) content = new TextDecoder("utf-8").decode(rawBuf);
-        } catch { content = new TextDecoder("utf-8").decode(rawBuf); }
-        allText += content.replace(/<[^>]+>/g," ").replace(/&[a-zA-Z#0-9]+;/g," ").replace(/\s+/g," ").trim() + "\n";
-      } catch {}
-    }
-    const idx = allText.search(/사업의\s*내용/);
-    const extracted = idx !== -1 ? allText.slice(idx, idx + 30000) : allText.slice(0, 30000);
-    return { text: extracted || null, reportName: filing.report_nm, reportDate: filing.rcept_dt };
-  } catch(e) { return { text: null, error: e.message }; }
 }
 
 // 대상 기업용 — 전문 (재무제표 파일 제외)
@@ -345,7 +299,11 @@ function CompanyModal({ company, category, periods, T, onClose }) {
         {/* 카테고리 */}
         <div style={{marginBottom:16,fontSize:12,color:T.subtext}}>
           카테고리: <span style={{fontWeight:700,color:T.text}}>{category.name}</span>
-          <span style={{marginLeft:8,color:T.faint}}>({({upstream:"상류",midstream:"중류",downstream:"하류",core:"핵심"})[category.position]||category.position})</span>
+          <span style={{marginLeft:8,color:T.faint}}>({({
+            upstream:"상류", midstream:"중류", downstream:"하류", core:"핵심",
+            supplier:"공급사", target:"대상", competitor:"경쟁사",
+            customer:"고객사", adjacent:"인접", manufacturer:"제조", distributor:"유통",
+          })[category.position]||category.position})</span>
         </div>
 
         {/* 태그 */}
@@ -437,7 +395,12 @@ function CompanyCard({ company, periods, T, category, onClickCompany }) {
 // ── 카테고리 행 ───────────────────────────────────────
 function CategoryRow({ category, periods, index, T, onClickCompany }) {
   const color = category.colorHex || CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-  const posLabel = {upstream:"▲ 상류",midstream:"◆ 중류",downstream:"▼ 하류",core:"★ 핵심"}[category.position]||category.position;
+  const posLabel = {
+    upstream:"▲ 상류", midstream:"◆ 중류", downstream:"▼ 하류", core:"★ 핵심",
+    supplier:"📦 공급사", target:"🎯 대상", competitor:"⚔ 경쟁사",
+    customer:"🛒 고객사", adjacent:"🔗 인접", manufacturer:"🏭 제조",
+    distributor:"🚚 유통",
+  }[category.position] || category.position;
   return (
     <div className="print-row" style={{marginBottom:20,animation:"fadeIn 0.4s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
@@ -482,16 +445,13 @@ function App() {
   const [similarInput, setSimilarInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [loadingMsg, setLoadingMsg] = useState("");
   const [dartProgress, setDartProgress] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [msgIdx, setMsgIdx] = useState(0);
   const [history, setHistory] = useState([]);
   const [showDrop, setShowDrop] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const timerRef = useRef(null);
   const inputRef = useRef(null);
   const dropRef = useRef(null);
 
@@ -520,18 +480,10 @@ function App() {
     setShowDrop(false);
     setHistory(prev => [q, ...prev.filter(h => h !== q)].slice(0, 10));
     setLoading(true); setError(null); setData(null); setDartProgress(null);
-    let idx = 0;
-    setLoadingMsg(LOADING_MSGS[0]);
-    timerRef.current = setInterval(() => {
-      idx = (idx+1) % LOADING_MSGS.length;
-      setMsgIdx(idx);
-      setLoadingMsg(LOADING_MSGS[idx]);
-    }, 1800);
     try {
       // ── 대상 기업 + 유사 상장사 전문 병렬 조회 ──
       let dartReportText = null;
       let dartReportName = null;
-      let dartFetchError = null;
       let similarTexts = [];
 
       const similarNames = dartKey.trim() && similarInput.trim()
@@ -553,9 +505,6 @@ function App() {
         if (similarNames.length === 0) {
           throw new Error(`"${q}"는 비상장사로 감사보고서(${mainResult.reportName})만 제출합니다.\n\n공시된 정보를 통해 공급망을 분석할 수 없습니다. 유사 상장사를 입력하세요.`);
         }
-        dartFetchError = "감사보고서 — 유사 상장사 원문으로 대체";
-      } else {
-        dartFetchError = mainResult?.error || "DART 전문 조회 실패";
       }
 
       // 유사 상장사 결과 처리 (대상 기업 원문 있으면 30K로 truncate, 없으면 전문 그대로)
@@ -565,11 +514,7 @@ function App() {
         reportName: r?.reportName ? `${r.reportName} (${r.reportDate})` : null,
       })).filter(r => r.text);
 
-      // 분기: 둘 다 없으면 → 에러 대신 웹서치 MODE로 fallback (DART Key 있어도)
-      if (!dartReportText && similarTexts.length === 0) {
-        // 섹터가 아닌 기업명인데 DART 실패 → 웹서치만으로 분석
-        dartFetchError = null; // 에러 표시 안 함, 그냥 계속 진행
-      }
+      // 둘 다 없으면 웹서치 fallback으로 계속 진행
 
       // Claude 메시지 구성
       const similarSection = similarTexts.length > 0
@@ -608,7 +553,7 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
 
       const res = await fetch("/api/v1/messages", {
         method:"POST",
-        headers:{"Content-Type":"application/json","anthropic-beta":"prompt-caching-2024-07-31"},
+        headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           model:"claude-sonnet-4-20250514", max_tokens:32000,
           system:[{type:"text", text:SYSTEM_PROMPT, cache_control:{type:"ephemeral"}}],
@@ -650,8 +595,6 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
       }
 
       if (dartKey.trim()) {
-        clearInterval(timerRef.current);
-        setLoadingMsg("📡 DART 공시 데이터 매칭 중...");
         const korCount = parsed.categories.flatMap(c=>c.companies||[]).filter(co=>!co.country||co.country==="KR").length;
         if (korCount > 0) {
           setDartProgress({done:0,total:korCount});
@@ -681,7 +624,6 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
     } catch(err) {
       setError(err.message);
     } finally {
-      clearInterval(timerRef.current);
       setLoading(false); setDartProgress(null);
     }
   }, [input, dartKey, similarInput]);
@@ -708,11 +650,21 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
         ]);
       });
     });
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"] = rows[0].map((_,i) => ({ wch: [12,10,16,8,8,6,20,12,12,12,12,12,12,8,30][i]||12 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, data.target || "밸류체인");
-    XLSX.writeFile(wb, `CHAINMAP_${data.target}_${new Date().toISOString().slice(0,10)}.xlsx`);
+    try {
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = rows[0].map((_,i) => ({ wch: [12,10,16,8,8,6,20,12,12,12,12,12,12,8,30][i]||12 }));
+      const wb = XLSX.utils.book_new();
+      const sheetName = (data.target||"밸류체인").replace(/[\/\\*?\[\]:]/g,"").slice(0,30);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      // blob 다운로드 (Railway 환경 호환)
+      const wbout = XLSX.write(wb, { bookType:"xlsx", type:"array" });
+      const blob = new Blob([wbout], { type:"application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `CHAINMAP_${data.target}_${new Date().toISOString().slice(0,10)}.xlsx`;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 1000);
+    } catch(e) { alert("엑셀 내보내기 실패: " + e.message); }
   }, [data]);
 
   const dartCount = data?.categories?.flatMap(c=>c.companies||[]).filter(co=>co.dartVerified).length||0;
@@ -747,11 +699,11 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
               onKeyDown={e=>{if(e.key==="Enter"&&!loading)analyze();if(e.key==="Escape")setShowDrop(false);}}
               placeholder="기업명 또는 섹터 (예: 삼성전자, 반도체, 2차전지)"
               style={{flex:1,background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 14px",color:T.text,fontSize:13,outline:"none"}}/>
-            <button onClick={()=>analyze()} disabled={loading||!input.trim()} style={{
-              background:loading?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
+            <button onClick={()=>analyze()} disabled={loading||!input.trim()||!dartKey.trim()} style={{
+              background:(loading||!dartKey.trim())?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
               color:"#fff",border:"none",borderRadius:8,padding:"9px 24px",
-              fontSize:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",whiteSpace:"nowrap",
-              boxShadow:loading?"none":"0 2px 8px rgba(37,99,235,0.3)"}}>
+              fontSize:13,fontWeight:700,cursor:(loading||!dartKey.trim())?"not-allowed":"pointer",whiteSpace:"nowrap",
+              boxShadow:(loading||!dartKey.trim())?"none":"0 2px 8px rgba(37,99,235,0.3)"}}>
               {loading?"분석 중...":"분석"}
             </button>
           </div>
@@ -853,11 +805,11 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
                   onKeyDown={e=>{if(e.key==="Enter"&&!loading)analyze();if(e.key==="Escape")setShowDrop(false);}}
                   placeholder="기업명 또는 섹터 (예: 삼성전자, 반도체, 2차전지)"
                   style={{flex:1,background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"13px 18px",color:T.text,fontSize:15,outline:"none",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}/>
-                <button onClick={()=>analyze()} disabled={loading||!input.trim()} style={{
-                  background:loading?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
+                <button onClick={()=>analyze()} disabled={loading||!input.trim()||!dartKey.trim()} style={{
+                  background:(loading||!dartKey.trim())?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
                   color:"#fff",border:"none",borderRadius:10,padding:"13px 28px",
-                  fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",whiteSpace:"nowrap",
-                  boxShadow:loading?"none":"0 2px 8px rgba(37,99,235,0.3)"}}>
+                  fontSize:15,fontWeight:700,cursor:(loading||!dartKey.trim())?"not-allowed":"pointer",whiteSpace:"nowrap",
+                  boxShadow:(loading||!dartKey.trim())?"none":"0 2px 8px rgba(37,99,235,0.3)"}}>
                   분석
                 </button>
               </div>
@@ -894,12 +846,13 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
 
             {/* DART 입력창 — 검색창 바로 아래 */}
             <div style={{width:"100%",maxWidth:560,background:T.dartBg,border:`1px solid ${T.dartBorder}`,borderRadius:10,padding:"14px 18px"}}>
-              <div style={{fontSize:11,color:T.dartText,fontWeight:700,marginBottom:8}}>⚙ DART Open API Key <span style={{fontWeight:400,opacity:0.7}}>(선택 — 국내 기업 공시 재무 검증)</span></div>
+              <div style={{fontSize:11,color:T.dartText,fontWeight:700,marginBottom:8}}>⚙ DART Open API Key <span style={{color:"#dc2626",fontWeight:800}}>필수</span> <span style={{fontWeight:400,opacity:0.7}}>(국내 기업 공시 재무 검증)</span></div>
               <input value={dartKey} onChange={e=>setDartKey(e.target.value)}
                 placeholder="발급받은 DART API Key 입력 (40자리) · opendart.fss.or.kr에서 무료 발급"
                 type="password"
                 style={{width:"100%",background:T.cardBg,border:`1px solid ${T.dartBorder}`,borderRadius:8,padding:"9px 14px",color:T.text,fontSize:12,outline:"none"}}/>
-              {dartKey && <div style={{marginTop:6,fontSize:11,color:T.dartText}}>✓ 설정됨 — 다음 분석부터 적용</div>}
+              {dartKey && <div style={{marginTop:6,fontSize:11,color:T.dartText}}>✓ 설정됨 — 분석 버튼이 활성화됩니다</div>}
+              {!dartKey && <div style={{marginTop:6,fontSize:11,color:"#dc2626"}}>⚠ DART Key 입력 후 분석 가능 · opendart.fss.or.kr에서 무료 발급</div>}
             </div>
           </div>
         )}
@@ -907,11 +860,11 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
         {loading && (
           <div style={{textAlign:"center",paddingTop:100}}>
             <div style={{display:"inline-block",width:60,height:60,marginBottom:24,border:`3px solid ${T.spinner}`,borderTop:`3px solid ${T.spinnerTop}`,borderRadius:"50%",animation:"spin 0.9s linear infinite"}}/>
-            <div style={{fontSize:16,color:T.spinnerTop,fontWeight:700,marginBottom:8}}>{loadingMsg}</div>
+            <div style={{fontSize:16,color:T.spinnerTop,fontWeight:700,marginBottom:8}}>{LOADING_MSG}</div>
             {dartProgress && (
               <div style={{maxWidth:380,margin:"16px auto 0"}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                  <span style={{fontSize:12,color:T.dartText}}>📡 DART 공시 매칭</span>
+                  <span style={{fontSize:12,color:T.dartText}}>📡 DART 재무 매칭</span>
                   <span style={{fontSize:12,color:T.dartText}}>{dartProgress.done} / {dartProgress.total}개</span>
                 </div>
                 <div style={{height:6,background:T.dartBg,borderRadius:3,overflow:"hidden"}}>
@@ -919,18 +872,13 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
                 </div>
               </div>
             )}
-            <div style={{marginTop:28,display:"flex",justifyContent:"center",gap:7}}>
-              {LOADING_MSGS.map((_,i)=>(
-                <div key={i} style={{width:7,height:7,borderRadius:"50%",background:i===msgIdx?T.dotActive:T.dot,transition:"background 0.3s"}}/>
-              ))}
-            </div>
           </div>
         )}
 
         {error && !loading && (
           <div style={{background:T.errorBg,border:`1px solid ${T.errorBorder}`,borderRadius:10,padding:"20px 24px",color:"#dc2626",maxWidth:640}}>
             <div style={{fontWeight:700,marginBottom:6,fontSize:14}}>⚠ 분석 오류</div>
-            <div style={{fontSize:12,lineHeight:1.6,color:"#b91c1c"}}>{error}</div>
+            <div style={{fontSize:12,lineHeight:1.6,color:"#b91c1c",whiteSpace:"pre-wrap"}}>{error}</div>
           </div>
         )}
 
