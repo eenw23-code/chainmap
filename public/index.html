@@ -248,34 +248,101 @@ async function dartGetReportText(key, corpName) {
     return { text: null, error: e.message };
   }
 }
+// ── BusinessAnalysisAgent ─────────────────────────────
+// DART zip 전문 추출 (재무제표 파일 제외, 서술형 텍스트만)
+async function dartGetFullText(key, corpName) {
+  try {
+    const corpCode = await dartGetCorpCode(key, corpName);
+    if (!corpCode) return { text: null, error: "기업을 DART에서 찾을 수 없습니다" };
+
+    let filing = null;
+    for (const pblntf_ty of ["A", "F"]) {
+      const filingR = await dartFetch(`${DART_BASE}/list.json?crtfc_key=${key}&corp_code=${corpCode}&pblntf_ty=${pblntf_ty}&page_count=10&sort=date&sort_mth=desc`);
+      const filingJ = await filingR.json();
+      filing = filingJ.list?.find(f =>
+        f.report_nm.includes("사업보고서") || f.report_nm.includes("감사보고서")
+      );
+      if (filing) break;
+    }
+    if (!filing) return { text: null, error: "DART에서 사업보고서/감사보고서를 찾을 수 없습니다" };
+
+    const docR = await dartFetch(`${DART_BASE}/document.json?crtfc_key=${key}&rcept_no=${filing.rcept_no}`);
+    const docBuf = await docR.arrayBuffer();
+    const zip = await JSZip.loadAsync(docBuf);
+
+    const narrativeFiles = [];
+    for (const [filename, file] of Object.entries(zip.files)) {
+      const name = filename.toLowerCase();
+      if (!name.endsWith(".xml") && !name.endsWith(".html") && !name.endsWith(".htm")) continue;
+      try {
+        const rawBuf = await file.async("arraybuffer");
+        let content;
+        try {
+          content = new TextDecoder("euc-kr").decode(rawBuf);
+          if (!/[\uAC00-\uD7A3]/.test(content)) content = new TextDecoder("utf-8").decode(rawBuf);
+        } catch { content = new TextDecoder("utf-8").decode(rawBuf); }
+
+        const text = content.replace(/<[^>]+>/g," ").replace(/&[a-zA-Z#0-9]+;/g," ").replace(/\s+/g," ").trim();
+
+        // 재무제표 파일 판별: 한글 비율이 15% 미만이면 숫자 테이블 위주로 간주하여 제외
+        const koreanChars = (text.match(/[\uAC00-\uD7A3]/g)||[]).length;
+        const ratio = koreanChars / Math.max(text.length, 1);
+        if (ratio < 0.15) continue;
+
+        narrativeFiles.push({ filename, text });
+      } catch {}
+    }
+
+    const fullText = narrativeFiles.map(f => f.text).join("\n\n");
+    return {
+      text: fullText || null,
+      reportName: filing.report_nm,
+      reportDate: filing.rcept_dt,
+      corpCode,
+      fileCount: narrativeFiles.length,
+      error: fullText ? null : "서술형 텍스트를 추출할 수 없습니다",
+    };
+  } catch(e) {
+    return { text: null, error: e.message };
+  }
+}
+
+// BusinessAnalysisAgent: 전문을 Claude에 넘겨 사업 구조화
 async function enrichWithDart(key, parsed, onProgress) {
   const clone = JSON.parse(JSON.stringify(parsed));
   const koreans = clone.categories.flatMap((cat, ci) =>
     (cat.companies || []).map((co, coi) => ({ co, ci, coi }))
   ).filter(({ co }) => !co.country || co.country === "KR");
   let done = 0;
-  // DART API 과부하 방지: 5개씩 청크로 나눠 순차 처리
-  const chunkSize = 5;
+  const chunkSize = 10; // 5→10으로 확대
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
   for (let i = 0; i < koreans.length; i += chunkSize) {
     const chunk = koreans.slice(i, i + chunkSize);
     await Promise.all(chunk.map(async ({ co, ci, coi }) => {
-      try {
-        const corpCode = await dartGetCorpCode(key, co.name);
-        if (corpCode) {
-          const [f23, f24] = await Promise.all([
-            dartGetFinancials(key, corpCode, 2023),
-            dartGetFinancials(key, corpCode, 2024),
-          ]);
-          if (f23 || f24) {
-            clone.categories[ci].companies[coi].financials = {
-              revenue: [f23?.revenue??null, f24?.revenue??null],
-              operatingProfit: [f23?.operatingProfit??null, f24?.operatingProfit??null],
-              netIncome: [f23?.netIncome??null, f24?.netIncome??null],
-            };
-            clone.categories[ci].companies[coi].dartVerified = true;
+      let retries = 2;
+      while (retries-- >= 0) {
+        try {
+          const corpCode = await dartGetCorpCode(key, co.name);
+          if (corpCode) {
+            const [f23, f24] = await Promise.all([
+              dartGetFinancials(key, corpCode, 2023),
+              dartGetFinancials(key, corpCode, 2024),
+            ]);
+            if (f23 || f24) {
+              clone.categories[ci].companies[coi].financials = {
+                revenue: [f23?.revenue??null, f24?.revenue??null],
+                operatingProfit: [f23?.operatingProfit??null, f24?.operatingProfit??null],
+                netIncome: [f23?.netIncome??null, f24?.netIncome??null],
+              };
+              clone.categories[ci].companies[coi].dartVerified = true;
+            }
           }
+          break; // 성공 시 루프 탈출
+        } catch(e) {
+          if (retries >= 0) await sleep(1000); // rate limit 시 1초 대기 후 재시도
         }
-      } catch { /* 개별 기업 실패 시 무시하고 계속 */ }
+      }
       done++; onProgress(done, koreans.length);
     }));
   }
@@ -512,18 +579,19 @@ function App() {
     setHistory(prev => [q, ...prev.filter(h => h !== q)].slice(0, 10));
     setLoading(true); setError(null); setData(null); setDartProgress(null);
     try {
-      // DART 원문 사전 조회 (dartKey 있을 때만)
+      // ── DART 전문 조회 → ValueChainMapper 직접 전달 ──
       let dartReportText = null;
       let dartReportName = null;
       let dartFetchError = null;
+
       if (dartKey.trim()) {
         try {
-          const dartData = await dartGetReportText(dartKey.trim(), q);
-          if (dartData.text) {
-            dartReportText = dartData.text;
-            dartReportName = dartData.reportName + " (" + dartData.reportDate + ")";
+          const fullData = await dartGetFullText(dartKey.trim(), q);
+          if (fullData.text) {
+            dartReportText = fullData.text;
+            dartReportName = `${fullData.reportName} (${fullData.reportDate}) — ${fullData.fileCount}개 서술 파일`;
           } else {
-            dartFetchError = dartData.error || "DART 원문 조회 실패";
+            dartFetchError = fullData.error || "DART 전문 조회 실패";
           }
         } catch(e) {
           dartFetchError = e.message;
@@ -531,10 +599,14 @@ function App() {
       }
 
       // 유사 상장사 원문 병렬 조회
+      // 대상 기업 원문 없으면 1차 출처 → 전문(dartGetFullText), 있으면 보조 출처 → 30K(dartGetReportText)
       let similarTexts = [];
       if (dartKey.trim() && similarInput.trim()) {
         const similarNames = similarInput.split("/").map(s=>s.trim()).filter(Boolean);
-        const results = await Promise.all(similarNames.map(n => dartGetReportText(dartKey.trim(), n).catch(()=>null)));
+        const fetchFn = !dartReportText
+          ? (n) => dartGetFullText(dartKey.trim(), n).catch(()=>null)   // 1차 출처: 전문
+          : (n) => dartGetReportText(dartKey.trim(), n).catch(()=>null); // 보조 출처: 30K
+        const results = await Promise.all(similarNames.map(fetchFn));
         similarTexts = results.map((r, i) => ({
           name: similarNames[i],
           text: r?.text || null,
@@ -559,17 +631,16 @@ ${r.text}
         ? `분석 대상 기업: ${q}
 이것은 기업명입니다. MODE A로 분석하세요.
 
-아래는 DART에서 직접 가져온 실제 보고서 원문입니다 (${dartReportName}):
+아래는 DART 공시 전문입니다 (${dartReportName}):
 
-===DART 원문 시작===
+===DART 공시 전문 시작===
 ${dartReportText}
-===DART 원문 끝===${similarSection}
+===DART 공시 전문 끝===${similarSection}
 
 분석 지침:
-1. 위 원문을 1차 출처로 사용하여 원재료/매입처, 판매경로/주요매출처, 경쟁현황, 신규사업을 추출.
-2. ${similarTexts.length > 0 ? `유사 상장사(${similarTexts.map(r=>r.name).join(", ")}) 원문을 보조 출처로 활용하여 사업 영역을 보완할 것.` : "비상장 기업인 경우, 가장 유사한 상장 경쟁사의 사업보고서·감사보고서·증권신고서를 웹에서 추가 검색하여 사업 영역을 보완할 것."}
-3. 원문에 없는 업체는 공시에서 근거가 있을 때만 추가. 순수 추정 금지.
-4. basis 필드에 출처(감사보고서 섹션명 또는 유사 상장사 공시명)를 반드시 명시.
+1. 위 공시 전문에서 원재료/매입처, 판매경로/주요매출처, 경쟁현황, 신규사업을 직접 추출하여 밸류체인을 매핑하세요.
+2. ${similarTexts.length > 0 ? `유사 상장사(${similarTexts.map(r=>r.name).join(", ")}) 원문을 보조 출처로 활용하여 누락된 기업을 보완할 것.` : "필요 시 웹서치로 보완하되, 공시에 근거 없는 업체 추가는 금지."}
+3. 순수 추정 금지. basis 필드에 공시 섹션명 또는 유사 상장사 공시명 명시.
 - 원재료/매입처 → suppliers
 - 판매경로/주요매출처 → customers
 - 경쟁사/경쟁현황 → competitors
