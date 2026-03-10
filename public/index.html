@@ -30,49 +30,25 @@ body { font-family: 'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-se
 const { useState, useCallback, useRef, useEffect } = React;
 
 // ── 테마 ──────────────────────────────────────────────
-const THEMES = {
-  light: {
-    bg:"#f4f6f9", headerBg:"#fff", headerBorder:"#e2e8f0",
-    cardBg:"#fff", cardBorder:"#dde2ed", cardBorderHover:"#3b82f6",
-    rowBg:"#f8fafc", text:"#0f172a", subtext:"#64748b", faint:"#94a3b8",
-    inputBg:"#f8fafc", inputBorder:"#cbd5e1",
-    logoColor:"#2563eb", logoText:"#0f172a",
-    statBg:"#fff", statBorder:"#e2e8f0", statVal:"#2563eb",
-    legendBg:"#fff", legendBorder:"#e2e8f0",
-    dartBg:"#f0fdf4", dartBorder:"#bbf7d0", dartText:"#15803d",
-    dartCardBg:"#dcfce7", dartCardBorder:"#86efac", dartCardText:"#15803d",
-    dartStatBg:"#f0fdf4", dartStatBorder:"#86efac", dartStatVal:"#16a34a",
-    errorBg:"#fff5f5", errorBorder:"#fecaca",
-    idleFg:"#1e293b", idleSub:"#64748b", idleFaint:"#94a3b8",
-    hintBg:"#eff6ff", hintBorder:"#bfdbfe", hintText:"#3b82f6",
-    spinner:"#e2e8f0", spinnerTop:"#2563eb",
-    dot:"#e2e8f0", dotActive:"#2563eb",
-    toggleBg:"#1e293b", toggleText:"#f8fafc",
-    dropBg:"#fff", dropBorder:"#e2e8f0", dropHover:"#f1f5f9",
-    modalBg:"#fff", modalOverlay:"rgba(0,0,0,0.4)",
-    shadow:"0 1px 6px rgba(0,0,0,0.06)",
-  },
-  dark: {
-    bg:"#050c14", headerBg:"#0a1828", headerBorder:"#1e3048",
-    cardBg:"#0f1923", cardBorder:"#1e3048", cardBorderHover:"#4a9eff",
-    rowBg:"#080f18", text:"#e8f4ff", subtext:"#5a8aaa", faint:"#3a6a9a",
-    inputBg:"#0a1828", inputBorder:"#1e4a7a",
-    logoColor:"#4a9eff", logoText:"#e8f4ff",
-    statBg:"#080f18", statBorder:"#1e3048", statVal:"#4a9eff",
-    legendBg:"#080f18", legendBorder:"#1e3048",
-    dartBg:"#0d3a1a", dartBorder:"#1a6b2a", dartText:"#3adf7a",
-    dartCardBg:"#0d3a1a", dartCardBorder:"#1a6b2a", dartCardText:"#3adf7a",
-    dartStatBg:"#0a2a14", dartStatBorder:"#1a6b2a", dartStatVal:"#3adf7a",
-    errorBg:"#1a0a0a", errorBorder:"#4a1a1a",
-    idleFg:"#3a6a9a", idleSub:"#2a5a7a", idleFaint:"#1a3a5a",
-    hintBg:"#0a1828", hintBorder:"#1e3a5a", hintText:"#4a9eff",
-    spinner:"#1e3048", spinnerTop:"#4a9eff",
-    dot:"#1e3048", dotActive:"#4a9eff",
-    toggleBg:"#e8f4ff", toggleText:"#0f172a",
-    dropBg:"#0a1828", dropBorder:"#1e3048", dropHover:"#0f1f30",
-    modalBg:"#0a1828", modalOverlay:"rgba(0,0,0,0.7)",
-    shadow:"0 1px 6px rgba(0,0,0,0.4)",
-  }
+const T = {
+  bg:"#f4f6f9", headerBg:"#fff", headerBorder:"#e2e8f0",
+  cardBg:"#fff", cardBorder:"#dde2ed", cardBorderHover:"#3b82f6",
+  rowBg:"#f8fafc", text:"#0f172a", subtext:"#64748b", faint:"#94a3b8",
+  inputBg:"#f8fafc", inputBorder:"#cbd5e1",
+  logoColor:"#2563eb", logoText:"#0f172a",
+  statBg:"#fff", statBorder:"#e2e8f0", statVal:"#2563eb",
+  legendBg:"#fff", legendBorder:"#e2e8f0",
+  dartBg:"#f0fdf4", dartBorder:"#bbf7d0", dartText:"#15803d",
+  dartCardBg:"#dcfce7", dartCardBorder:"#86efac", dartCardText:"#15803d",
+  dartStatBg:"#f0fdf4", dartStatBorder:"#86efac", dartStatVal:"#16a34a",
+  errorBg:"#fff5f5", errorBorder:"#fecaca",
+  idleFg:"#1e293b", idleSub:"#64748b", idleFaint:"#94a3b8",
+  hintBg:"#eff6ff", hintBorder:"#bfdbfe", hintText:"#3b82f6",
+  spinner:"#e2e8f0", spinnerTop:"#2563eb",
+  dot:"#e2e8f0", dotActive:"#2563eb",
+  dropBg:"#fff", dropBorder:"#e2e8f0", dropHover:"#f1f5f9",
+  modalBg:"#fff", modalOverlay:"rgba(0,0,0,0.4)",
+  shadow:"0 1px 6px rgba(0,0,0,0.06)",
 };
 
 const SUGGESTIONS = [];
@@ -220,6 +196,11 @@ async function dartGetReportText(key, corpName) {
     if (!filing) return { text: null, error: "DART에서 공시를 찾을 수 없습니다" };
     const docR = await dartFetch(`${DART_BASE}/document.json?crtfc_key=${key}&rcept_no=${filing.rcept_no}`);
     const docBuf = await docR.arrayBuffer();
+    // zip magic bytes 확인 (PK\x03\x04)
+    const magic = new Uint8Array(docBuf.slice(0, 4));
+    if (magic[0] !== 0x50 || magic[1] !== 0x4B) {
+      return { text: null, error: "문서가 zip 형식이 아닙니다" };
+    }
     const zip = await JSZip.loadAsync(docBuf);
     let allText = "";
     for (const [, file] of Object.entries(zip.files)) {
@@ -262,6 +243,11 @@ async function dartGetFullText(key, corpName) {
 
     const docR = await dartFetch(`${DART_BASE}/document.json?crtfc_key=${key}&rcept_no=${filing.rcept_no}`);
     const docBuf = await docR.arrayBuffer();
+    // zip magic bytes 확인 (PK\x03\x04)
+    const magic = new Uint8Array(docBuf.slice(0, 4));
+    if (magic[0] !== 0x50 || magic[1] !== 0x4B) {
+      return { text: null, error: "문서가 zip 형식이 아닙니다" };
+    }
     const zip = await JSZip.loadAsync(docBuf);
     const narrativeFiles = [];
     for (const [, file] of Object.entries(zip.files)) {
@@ -501,7 +487,6 @@ function App() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [msgIdx, setMsgIdx] = useState(0);
-  const [isDark, setIsDark] = useState(false);
   const [history, setHistory] = useState([]);
   const [showDrop, setShowDrop] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -509,8 +494,6 @@ function App() {
   const timerRef = useRef(null);
   const inputRef = useRef(null);
   const dropRef = useRef(null);
-
-  const T = THEMES[isDark ? "dark" : "light"];
 
   // 드롭다운 외부 클릭 닫기
   useEffect(() => {
@@ -582,9 +565,10 @@ function App() {
         reportName: r?.reportName ? `${r.reportName} (${r.reportDate})` : null,
       })).filter(r => r.text);
 
-      // 분기: 둘 다 없으면 분석 불가 (섹터 입력 제외)
-      if (!dartReportText && similarTexts.length === 0 && dartKey.trim()) {
-        throw new Error(`분석 불가: DART 원문을 찾을 수 없습니다.\n원인: ${dartFetchError}\n\n기업명 표기를 확인하거나, 유사 상장사를 입력하세요.`);
+      // 분기: 둘 다 없으면 → 에러 대신 웹서치 MODE로 fallback (DART Key 있어도)
+      if (!dartReportText && similarTexts.length === 0) {
+        // 섹터가 아닌 기업명인데 DART 실패 → 웹서치만으로 분석
+        dartFetchError = null; // 에러 표시 안 함, 그냥 계속 진행
       }
 
       // Claude 메시지 구성
@@ -803,13 +787,6 @@ Porter Value Chain 프레임워크로 upstream→manufacturer→distributor→cu
           ⚙ DART {dartKey?"✓":"미설정"}
         </button>
         )}
-
-        <button onClick={()=>setIsDark(v=>!v)} className="no-print" style={{
-          background:T.toggleBg,color:T.toggleText,
-          border:"none",borderRadius:8,padding:"8px 14px",
-          fontSize:13,cursor:"pointer",fontWeight:700}}>
-          {isDark?"☀️":"🌙"}
-        </button>
 
         {data && (
           <button onClick={exportExcel} className="no-print" style={{
