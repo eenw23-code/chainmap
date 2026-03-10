@@ -29,49 +29,25 @@ body { font-family: 'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-se
 const { useState, useCallback, useRef, useEffect } = React;
 
 // ── 테마 ──────────────────────────────────────────────
-const THEMES = {
-  light: {
-    bg:"#f4f6f9", headerBg:"#fff", headerBorder:"#e2e8f0",
-    cardBg:"#fff", cardBorder:"#dde2ed", cardBorderHover:"#3b82f6",
-    rowBg:"#f8fafc", text:"#0f172a", subtext:"#64748b", faint:"#94a3b8",
-    inputBg:"#f8fafc", inputBorder:"#cbd5e1",
-    logoColor:"#2563eb", logoText:"#0f172a",
-    statBg:"#fff", statBorder:"#e2e8f0", statVal:"#2563eb",
-    legendBg:"#fff", legendBorder:"#e2e8f0",
-    dartBg:"#f0fdf4", dartBorder:"#bbf7d0", dartText:"#15803d",
-    dartCardBg:"#dcfce7", dartCardBorder:"#86efac", dartCardText:"#15803d",
-    dartStatBg:"#f0fdf4", dartStatBorder:"#86efac", dartStatVal:"#16a34a",
-    errorBg:"#fff5f5", errorBorder:"#fecaca",
-    idleFg:"#1e293b", idleSub:"#64748b", idleFaint:"#94a3b8",
-    hintBg:"#eff6ff", hintBorder:"#bfdbfe", hintText:"#3b82f6",
-    spinner:"#e2e8f0", spinnerTop:"#2563eb",
-    dot:"#e2e8f0", dotActive:"#2563eb",
-    toggleBg:"#1e293b", toggleText:"#f8fafc",
-    dropBg:"#fff", dropBorder:"#e2e8f0", dropHover:"#f1f5f9",
-    modalBg:"#fff", modalOverlay:"rgba(0,0,0,0.4)",
-    shadow:"0 1px 6px rgba(0,0,0,0.06)",
-  },
-  dark: {
-    bg:"#050c14", headerBg:"#0a1828", headerBorder:"#1e3048",
-    cardBg:"#0f1923", cardBorder:"#1e3048", cardBorderHover:"#4a9eff",
-    rowBg:"#080f18", text:"#e8f4ff", subtext:"#5a8aaa", faint:"#3a6a9a",
-    inputBg:"#0a1828", inputBorder:"#1e4a7a",
-    logoColor:"#4a9eff", logoText:"#e8f4ff",
-    statBg:"#080f18", statBorder:"#1e3048", statVal:"#4a9eff",
-    legendBg:"#080f18", legendBorder:"#1e3048",
-    dartBg:"#0d3a1a", dartBorder:"#1a6b2a", dartText:"#3adf7a",
-    dartCardBg:"#0d3a1a", dartCardBorder:"#1a6b2a", dartCardText:"#3adf7a",
-    dartStatBg:"#0a2a14", dartStatBorder:"#1a6b2a", dartStatVal:"#3adf7a",
-    errorBg:"#1a0a0a", errorBorder:"#4a1a1a",
-    idleFg:"#3a6a9a", idleSub:"#2a5a7a", idleFaint:"#1a3a5a",
-    hintBg:"#0a1828", hintBorder:"#1e3a5a", hintText:"#4a9eff",
-    spinner:"#1e3048", spinnerTop:"#4a9eff",
-    dot:"#1e3048", dotActive:"#4a9eff",
-    toggleBg:"#e8f4ff", toggleText:"#0f172a",
-    dropBg:"#0a1828", dropBorder:"#1e3048", dropHover:"#0f1f30",
-    modalBg:"#0a1828", modalOverlay:"rgba(0,0,0,0.7)",
-    shadow:"0 1px 6px rgba(0,0,0,0.4)",
-  }
+const T = {
+  bg:"#f4f6f9", headerBg:"#fff", headerBorder:"#e2e8f0",
+  cardBg:"#fff", cardBorder:"#dde2ed", cardBorderHover:"#3b82f6",
+  rowBg:"#f8fafc", text:"#0f172a", subtext:"#64748b", faint:"#94a3b8",
+  inputBg:"#f8fafc", inputBorder:"#cbd5e1",
+  logoColor:"#2563eb", logoText:"#0f172a",
+  statBg:"#fff", statBorder:"#e2e8f0", statVal:"#2563eb",
+  legendBg:"#fff", legendBorder:"#e2e8f0",
+  dartBg:"#f0fdf4", dartBorder:"#bbf7d0", dartText:"#15803d",
+  dartCardBg:"#dcfce7", dartCardBorder:"#86efac", dartCardText:"#15803d",
+  dartStatBg:"#f0fdf4", dartStatBorder:"#86efac", dartStatVal:"#16a34a",
+  errorBg:"#fff5f5", errorBorder:"#fecaca",
+  idleFg:"#1e293b", idleSub:"#64748b", idleFaint:"#94a3b8",
+  hintBg:"#eff6ff", hintBorder:"#bfdbfe", hintText:"#3b82f6",
+  spinner:"#e2e8f0", spinnerTop:"#2563eb",
+  dot:"#e2e8f0", dotActive:"#2563eb",
+  dropBg:"#fff", dropBorder:"#e2e8f0", dropHover:"#f1f5f9",
+  modalBg:"#fff", modalOverlay:"rgba(0,0,0,0.4)",
+  shadow:"0 1px 6px rgba(0,0,0,0.06)",
 };
 
 const SUGGESTIONS = [];
@@ -104,18 +80,7 @@ STEP 2 — EXTRACT only from:
 - 경쟁 현황 / 시장 현황 → competitors
 - 신규사업 / 인접 사업 → adjacent
 
-STEP 3 — BUILD analystNote for MODE A using ONLY:
-(a) DART 사업보고서 주석 (재무제표 주석):
-    - 매출처 집중도: 상위 고객 매출 비중 (예: "상위 1개사 매출 비중 67%")
-    - 특수관계자 거래: 계열사 내부거래 규모
-    - 주요 계약 및 우발채무
-(b) Web search — 최근 1~2년 팩트 기반 이슈:
-    - 주요 수주/계약 체결 공시
-    - 규제 변화 (정부 정책, 인증, 환경규제)
-    - 기술 변화 (대체재 등장, 공정 전환)
-    - 핵심 리스크 이벤트 (소송, 원재료 가격 급등 등)
-→ 각 항목마다 출처 명시 (보고서명+연도 또는 언론사+날짜)
-→ 추정/의견 금지. 확인된 사실만.
+STEP 3 — done. Move to JSON output.
 
 position values: supplier | target | competitor | customer | adjacent
 - target: the company itself (1 category, 1 company only)
@@ -137,13 +102,6 @@ RULES for MODE B:
 - position values for sector mode: supplier | manufacturer | distributor | customer | adjacent
 - notes: brief factual description of the company's role in this value chain stage
 
-STEP — BUILD analystNote for MODE B using web search:
-- 해당 섹터의 현재 구조적 이슈 (공급망 재편, 지역화, 기술 전환 등)
-- 밸류체인 내 병목 구간 또는 마진 집중 구간 (산업 보고서 근거)
-- PE 투자 관점에서 주목할 단계 또는 플레이어 유형 (근거 명시)
-→ 각 항목마다 출처 명시 (보고서명+연도 또는 언론사+날짜)
-→ 추정/의견 금지. 출처 있는 사실만.
-
 ══════════════════════════════════════
 SHARED JSON STRUCTURE (both modes)
 ══════════════════════════════════════
@@ -154,24 +112,6 @@ Return ONLY valid JSON (no markdown, no backticks, no preamble):
   "period": ["'23", "'24"],
   "summary": "한 줄 요약",
   "sourceNote": "참조 출처 명시",
-  "analystNote": {
-    "items": [
-      {
-        "type": "concentration",
-        "label": "매출처 집중도",
-        "content": "상위 1개사(삼성전자) 매출 비중 67% (2023 사업보고서 주석 제25호)",
-        "source": "2023 사업보고서 재무제표 주석",
-        "sourceType": "dart"
-      },
-      {
-        "type": "issue",
-        "label": "최근 이슈",
-        "content": "2024년 3월 중국산 원재료 수입 관세 25% 부과 — 원가 구조 영향 불가피",
-        "source": "산업통상자원부 고시 2024-45호",
-        "sourceType": "web"
-      }
-    ]
-  },
   "categories": [
     {
       "name": "카테고리명",
@@ -193,9 +133,6 @@ Return ONLY valid JSON (no markdown, no backticks, no preamble):
   ]
 }
 
-analystNote.items type values: concentration | related_party | contract | regulation | technology | risk | bottleneck | investment_focus
-- Each item MUST have source. No source = do not include.
-- Each item MUST have sourceType: "dart" (DART 공시 기반) | "web" (인터넷 출처) | "estimate" (추정 — MODE B 섹터 분석에서만 허용)
 - financials: always null (leave for DART enrichment). For non-KR companies, always null regardless of available data — do NOT fill from web search or estimation.
 - return ONLY JSON`;
 
@@ -424,74 +361,6 @@ function CategoryRow({ category, periods, index, T, onClickCompany }) {
   );
 }
 
-// ── 애널리스트 노트 ───────────────────────────────────
-const TYPE_META = {
-  concentration: { icon:"📊", label:"매출처 집중도", color:"#7c3aed", bg:"#f5f3ff", border:"#ddd6fe" },
-  related_party:  { icon:"🔗", label:"특수관계자 거래", color:"#b45309", bg:"#fffbeb", border:"#fde68a" },
-  contract:       { icon:"📝", label:"주요 계약", color:"#0369a1", bg:"#f0f9ff", border:"#bae6fd" },
-  regulation:     { icon:"⚖️", label:"규제 변화", color:"#dc2626", bg:"#fff5f5", border:"#fecaca" },
-  technology:     { icon:"⚡", label:"기술 변화", color:"#059669", bg:"#f0fdf4", border:"#bbf7d0" },
-  risk:           { icon:"⚠️", label:"리스크", color:"#dc2626", bg:"#fff5f5", border:"#fecaca" },
-  bottleneck:     { icon:"🔴", label:"병목 구간", color:"#9a3412", bg:"#fff7ed", border:"#fed7aa" },
-  investment_focus:{ icon:"🎯", label:"투자 주목 구간", color:"#1d4ed8", bg:"#eff6ff", border:"#bfdbfe" },
-};
-const SOURCE_TYPE_COLOR = {
-  dart:     "#0f172a",
-  web:      "#1d4ed8",
-  estimate: "#dc2626",
-};
-const SOURCE_TYPE_LABEL = {
-  dart:     "DART",
-  web:      "웹",
-  estimate: "추정",
-};
-function AnalystNotePanel({ items, T }) {
-  const [open, setOpen] = useState(true);
-  return (
-    <div style={{marginBottom:20,border:`1px solid ${T.cardBorder}`,borderRadius:10,overflow:"hidden",animation:"fadeIn 0.4s ease"}}>
-      <div onClick={()=>setOpen(v=>!v)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",background:T.cardBg,cursor:"pointer",userSelect:"none"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:15}}>🧠</span>
-          <span style={{fontSize:13,fontWeight:800,color:T.text}}>애널리스트 노트</span>
-          <div style={{display:"flex",gap:6,marginLeft:4}}>
-            {[["dart","DART","#0f172a"],["web","웹출처","#1d4ed8"],["estimate","추정","#dc2626"]].map(([,label,color])=>(
-              <span key={label} style={{fontSize:10,color,fontWeight:700}}>● {label}</span>
-            ))}
-          </div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:11,color:T.faint}}>{items.length}개 항목</span>
-          <span style={{fontSize:13,color:T.subtext}}>{open?"▲":"▼"}</span>
-        </div>
-      </div>
-      {open && (
-        <div style={{padding:"12px 16px",background:T.rowBg,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:10}}>
-          {items.map((item, i) => {
-            const meta = TYPE_META[item.type] || { icon:"📌", label:item.type, color:T.subtext, bg:T.cardBg, border:T.cardBorder };
-            const contentColor = SOURCE_TYPE_COLOR[item.sourceType] || T.text;
-            const sourceLabel = SOURCE_TYPE_LABEL[item.sourceType];
-            return (
-              <div key={i} style={{background:meta.bg,border:`1px solid ${meta.border}`,borderRadius:8,padding:"10px 14px"}}>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
-                  <span style={{fontSize:13}}>{meta.icon}</span>
-                  <span style={{fontSize:10,fontWeight:800,color:meta.color,textTransform:"uppercase",letterSpacing:1}}>{item.label||meta.label}</span>
-                  {sourceLabel && (
-                    <span style={{marginLeft:"auto",fontSize:9,fontWeight:700,color:contentColor,border:`1px solid ${contentColor}`,borderRadius:3,padding:"1px 5px",opacity:0.8}}>{sourceLabel}</span>
-                  )}
-                </div>
-                <div style={{fontSize:12,color:contentColor,lineHeight:1.6,marginBottom:6,fontWeight:item.sourceType==="dart"?600:400}}>{item.content}</div>
-                {item.source && (
-                  <div style={{fontSize:10,color:contentColor,opacity:0.7,fontStyle:"italic"}}>출처: {item.source}</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── 범례 ──────────────────────────────────────────────
 function Legend({ periods, T }) {
   return (
@@ -518,12 +387,10 @@ function Legend({ periods, T }) {
 function App() {
   const [input, setInput] = useState("");
   const [dartKey, setDartKey] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dartProgress, setDartProgress] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [isDark, setIsDark] = useState(false);
   const [history, setHistory] = useState([]);
   const [showDrop, setShowDrop] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -532,7 +399,7 @@ function App() {
   const inputRef = useRef(null);
   const dropRef = useRef(null);
 
-  const T = THEMES[isDark ? "dark" : "light"];
+  
 
   // 드롭다운 외부 클릭 닫기
   useEffect(() => {
@@ -549,7 +416,7 @@ function App() {
     : [...new Set([...history, ...SUGGESTIONS])].slice(0, 8);
 
   const goHome = useCallback(() => {
-    setData(null); setError(null); setInput(""); setShowSettings(false); setShowDrop(false);
+    setData(null); setError(null); setInput(""); setShowDrop(false);
   }, []);
 
   const analyze = useCallback(async (keyword) => {
@@ -681,18 +548,7 @@ DART(dart.fss.or.kr) 또는 웹에서 해당 기업의 최신 사업보고서 "�
     ws1["!cols"] = [14,10,30,18,8,8,6,20,10,10,10,10,10,10,8,30].map(wch=>({wch}));
     XLSX.utils.book_append_sheet(wb, ws1, "밸류체인");
 
-    // 시트2: 애널리스트 노트
-    if (data.analystNote?.items?.length > 0) {
-      const noteRows = [["유형","항목","내용","출처","출처유형"]];
-      data.analystNote.items.forEach(item => {
-        noteRows.push([item.type||"", item.label||"", item.content||"", item.source||"", item.sourceType||""]);
-      });
-      const ws2 = XLSX.utils.aoa_to_sheet(noteRows);
-      ws2["!cols"] = [14,16,60,30,10].map(wch=>({wch}));
-      XLSX.utils.book_append_sheet(wb, ws2, "애널리스트노트");
-    }
-
-    // 시트3: 분석 개요
+    // 시트2: 분석 개요
     const infoRows = [
       ["분석 대상", data.target||""],
       ["모드", data.mode||""],
@@ -772,23 +628,6 @@ DART(dart.fss.or.kr) 또는 웹에서 해당 기업의 최신 사업보고서 "�
         </div>
         )}
 
-        {(loading || data || error) && (
-        <button onClick={()=>setShowSettings(v=>!v)} className="no-print" style={{
-          background:showSettings?T.dartBg:T.inputBg,
-          border:`1px solid ${showSettings?T.dartBorder:T.cardBorder}`,
-          color:showSettings?T.dartText:T.subtext,
-          borderRadius:8,padding:"8px 14px",fontSize:12,cursor:"pointer",fontWeight:700}}>
-          ⚙ DART {dartKey?"✓":"미설정"}
-        </button>
-        )}
-
-        <button onClick={()=>setIsDark(v=>!v)} className="no-print" style={{
-          background:T.toggleBg,color:T.toggleText,
-          border:"none",borderRadius:8,padding:"8px 14px",
-          fontSize:13,cursor:"pointer",fontWeight:700}}>
-          {isDark?"☀️":"🌙"}
-        </button>
-
         {data && (
           <button onClick={exportExcel} className="no-print" style={{
             background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",
@@ -840,27 +679,6 @@ DART(dart.fss.or.kr) 또는 웹에서 해당 기업의 최신 사업보고서 "�
             ))}
           </div>
           <div style={{marginLeft:"auto",fontSize:10,color:T.faint}}>(단위: 억원)</div>
-        </div>
-      )}
-
-      {/* DART Settings */}
-      {showSettings && (
-        <div style={{background:T.dartBg,borderBottom:`1px solid ${T.dartBorder}`,padding:"14px 28px",display:"flex",alignItems:"flex-start",gap:20,flexWrap:"wrap"}}>
-          <div>
-            <div style={{fontSize:11,color:T.dartText,fontWeight:700,marginBottom:4}}>DART Open API Key</div>
-            <div style={{fontSize:10,color:T.dartText,lineHeight:1.8,opacity:0.8}}>
-              1. opendart.fss.or.kr 접속 → 인증키 신청 (무료, 즉시 발급)<br/>
-              2. 이메일 수신 후 아래 입력<br/>
-              3. 분석 시 국내 기업 재무를 실제 공시로 자동 교체
-            </div>
-          </div>
-          <div style={{flex:1,maxWidth:420}}>
-            <input value={dartKey} onChange={e=>setDartKey(e.target.value)}
-              placeholder="발급받은 DART API Key 입력 (40자리)"
-              type="password"
-              style={{width:"100%",background:T.cardBg,border:`1px solid ${T.dartBorder}`,borderRadius:8,padding:"9px 14px",color:T.text,fontSize:12,outline:"none"}}/>
-            {dartKey && <div style={{marginTop:6,fontSize:11,color:T.dartText}}>✓ 설정됨 — 다음 분석부터 적용</div>}
-          </div>
         </div>
       )}
 
@@ -958,10 +776,6 @@ DART(dart.fss.or.kr) 또는 웹에서 해당 기업의 최신 사업보고서 "�
                 </div>
               </div>
             )}
-            {data.analystNote?.items?.length > 0 && (
-              <AnalystNotePanel items={data.analystNote.items} T={T} />
-            )}
-            
             <div style={{display:"flex",gap:12,marginBottom:24,flexWrap:"wrap"}}>
               {[
                 {label:"카테고리",val:data.categories?.length||0},
