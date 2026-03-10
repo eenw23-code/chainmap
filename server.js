@@ -5,7 +5,6 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Anthropic API 프록시
 app.post('/api/v1/messages', async (req, res) => {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -29,7 +28,6 @@ app.post('/api/v1/messages', async (req, res) => {
   }
 });
 
-// DART API CORS 우회 프록시
 const ALLOWED_HOST = 'opendart.fss.or.kr';
 
 app.get('/api/dart/proxy', async (req, res) => {
@@ -50,7 +48,6 @@ app.get('/api/dart/proxy', async (req, res) => {
     res.setHeader('Content-Type', contentType);
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    // 바이너리(zip) vs 텍스트/JSON 구분
     if (contentType.includes('json') || contentType.includes('text')) {
       const text = await response.text();
       res.status(response.status).send(text);
