@@ -81,8 +81,6 @@ STEP 2 — EXTRACT only from:
 - 경쟁 현황 / 시장 현황 → competitors
 - 신규사업 / 인접 사업 → adjacent
 
-STEP 3 — done. Move to JSON output.
-
 position values: supplier | target | competitor | customer | adjacent
 - target: the company itself (1 category, 1 company only)
 - notes: facts from disclosures only. No estimation.
@@ -441,7 +439,7 @@ function App() {
 먼저 입력값이 기업명인지 섹터/산업명인지 판단해줘.
 
 [기업명인 경우 — MODE A]
-DART(dart.fss.or.kr) 또는 웹에서 해당 기업의 최신 사업보고서 "사업의 내용" 섹션을 검색해줘. 비상장이면 가장 유사한 상장 경쟁사의 사업보고서를 대체 참조해줘.
+DART(dart.fss.or.kr)에서 해당 기업의 최신 사업보고서 또는 감사보고서 "사업의 내용" 섹션을 검색해줘. 비상장 기업도 외부감사 대상이면 DART에 감사보고서가 있으니 반드시 먼저 탐색해줘. DART 공시가 전혀 없을 때만 유사 상장사 보고서를 대체 참조해줘.
 원재료 항목, 판매경로/주요매출처 항목, 경쟁현황 항목, 신규사업 항목을 바탕으로 PE 투자 관점의 밸류체인을 매핑해줘. 공시에 명시된 사실만 사용하고, 추정은 금지.
 
 [섹터/산업명인 경우 — MODE B]
