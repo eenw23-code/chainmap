@@ -563,9 +563,10 @@ function App() {
     try {
       const res = await fetch("/api/v1/messages", {
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json","anthropic-beta":"prompt-caching-2024-07-31"},
         body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:20000, system:SYSTEM_PROMPT,
+          model:"claude-sonnet-4-20250514", max_tokens:20000,
+          system:[{type:"text", text:SYSTEM_PROMPT, cache_control:{type:"ephemeral"}}],
           tools:[{type:"web_search_20250305",name:"web_search"}],
           messages:[{role:"user",content:`분석 대상: ${q}
 
@@ -613,7 +614,7 @@ DART(dart.fss.or.kr) 또는 웹에서 해당 기업의 최신 사업보고서 "�
       }
       if (dartKey.trim()) {
         clearInterval(timerRef.current);
-        setLoadingMsg("📡 DART 공시 데이터 매칭 중...");
+        
         const korCount = parsed.categories.flatMap(c=>c.companies||[]).filter(co=>co.country==="KR").length;
         if (korCount > 0) {
           setDartProgress({done:0,total:korCount});
@@ -736,11 +737,12 @@ DART(dart.fss.or.kr) 또는 웹에서 해당 기업의 최신 사업보고서 "�
           <div style={{display:"flex",gap:8}}>
             <input ref={inputRef} value={input} onChange={e=>{setInput(e.target.value);setShowDrop(true);}}
               onFocus={()=>setShowDrop(true)}
-              onKeyDown={e=>{if(e.key==="Enter"&&!loading)analyze();if(e.key==="Escape")setShowDrop(false);}}
-              placeholder="기업명 또는 섹터 (예: 삼성전자, 반도체, 2차전지)"
-              style={{flex:1,background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 14px",color:T.text,fontSize:13,outline:"none"}}/>
-            <button onClick={()=>analyze()} disabled={loading||!input.trim()} style={{
-              background:loading?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
+              onKeyDown={e=>{if(e.key==="Enter"&&!loading&&dartKey)analyze();if(e.key==="Escape")setShowDrop(false);}}
+              placeholder={dartKey?"기업명 또는 섹터 (예: 삼성전자, 반도체, 2차전지)":"DART API Key를 입력하세요"}
+              disabled={!dartKey}
+              style={{flex:1,background:dartKey?T.inputBg:"#f1f5f9",border:`1px solid ${dartKey?T.inputBorder:"#cbd5e1"}`,borderRadius:8,padding:"9px 14px",color:dartKey?T.text:"#94a3b8",fontSize:13,outline:"none",cursor:dartKey?"text":"not-allowed"}}/>
+            <button onClick={()=>analyze()} disabled={loading||!input.trim()||!dartKey} style={{
+              background:(loading||!dartKey)?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
               color:"#fff",border:"none",borderRadius:8,padding:"9px 24px",
               fontSize:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",whiteSpace:"nowrap",
               boxShadow:loading?"none":"0 2px 8px rgba(37,99,235,0.3)"}}>
@@ -872,14 +874,21 @@ DART(dart.fss.or.kr) 또는 웹에서 해당 기업의 최신 사업보고서 "�
 
             {/* 중앙 검색창 */}
             <div ref={dropRef} style={{width:"100%",maxWidth:560,position:"relative",marginBottom:16}}>
+              {!dartKey && (
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,padding:"10px 14px",background:"#fef3c7",border:"1px solid #f59e0b",borderRadius:8}}>
+                  <span style={{fontSize:15}}>🔑</span>
+                  <span style={{fontSize:13,color:"#92400e",fontWeight:600}}>DART API Key를 먼저 입력해 주세요</span>
+                </div>
+              )}
               <div style={{display:"flex",gap:8}}>
                 <input ref={inputRef} value={input} onChange={e=>{setInput(e.target.value);setShowDrop(true);}}
                   onFocus={()=>setShowDrop(true)}
-                  onKeyDown={e=>{if(e.key==="Enter"&&!loading)analyze();if(e.key==="Escape")setShowDrop(false);}}
-                  placeholder="기업명 또는 섹터 (예: 삼성전자, 반도체, 2차전지)"
-                  style={{flex:1,background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:10,padding:"13px 18px",color:T.text,fontSize:15,outline:"none",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}/>
-                <button onClick={()=>analyze()} disabled={loading||!input.trim()} style={{
-                  background:loading?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
+                  onKeyDown={e=>{if(e.key==="Enter"&&!loading&&dartKey)analyze();if(e.key==="Escape")setShowDrop(false);}}
+                  placeholder={dartKey?"기업명 또는 섹터 (예: 삼성전자, 반도체, 2차전지)":"DART API Key를 입력하세요"}
+                  disabled={!dartKey}
+                  style={{flex:1,background:dartKey?T.inputBg:"#f1f5f9",border:`1px solid ${dartKey?T.inputBorder:"#cbd5e1"}`,borderRadius:10,padding:"13px 18px",color:dartKey?T.text:"#94a3b8",fontSize:15,outline:"none",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",cursor:dartKey?"text":"not-allowed"}}/>
+                <button onClick={()=>analyze()} disabled={loading||!input.trim()||!dartKey} style={{
+                  background:(loading||!dartKey)?"#94a3b8":"linear-gradient(135deg,#3b82f6,#2563eb)",
                   color:"#fff",border:"none",borderRadius:10,padding:"13px 28px",
                   fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",whiteSpace:"nowrap",
                   boxShadow:loading?"none":"0 2px 8px rgba(37,99,235,0.3)"}}>
