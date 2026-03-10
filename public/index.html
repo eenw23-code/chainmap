@@ -136,11 +136,27 @@ Return ONLY valid JSON (no markdown, no backticks, no preamble):
 - return ONLY JSON`;
 
 const DART_BASE = "https://opendart.fss.or.kr/api";
+
+// 법인형태 제거 후 기업명 정규화 (매칭률 향상)
+function normalizeName(name) {
+  return name
+    .replace(/^\(주\)|^주식회사\s*/,"")
+    .replace(/\(주\)$|\s*주식회사$/,"")
+    .trim();
+}
+
 async function dartGetCorpCode(key, name) {
   try {
-    const r = await fetch(`${DART_BASE}/list.json?crtfc_key=${key}&corp_name=${encodeURIComponent(name)}&page_count=1&sort=date&sort_mth=desc`);
+    // 1차: 원래 이름으로 검색
+    const r = await fetch(`${DART_BASE}/list.json?crtfc_key=${key}&corp_name=${encodeURIComponent(name)}&page_count=5&sort=date&sort_mth=desc`);
     const j = await r.json();
-    return j.status === "000" && j.list?.length ? j.list[0].corp_code : null;
+    if (j.status === "000" && j.list?.length) return j.list[0].corp_code;
+    // 2차: 법인형태 제거 후 재검색
+    const normalized = normalizeName(name);
+    if (normalized === name) return null;
+    const r2 = await fetch(`${DART_BASE}/list.json?crtfc_key=${key}&corp_name=${encodeURIComponent(normalized)}&page_count=5&sort=date&sort_mth=desc`);
+    const j2 = await r2.json();
+    return j2.status === "000" && j2.list?.length ? j2.list[0].corp_code : null;
   } catch { return null; }
 }
 async function dartGetFinancials(key, corpCode, year) {
@@ -167,7 +183,7 @@ async function enrichWithDart(key, parsed, onProgress) {
   const clone = JSON.parse(JSON.stringify(parsed));
   const koreans = clone.categories.flatMap((cat, ci) =>
     (cat.companies || []).map((co, coi) => ({ co, ci, coi }))
-  ).filter(({ co }) => co.country === "KR");
+  ).filter(({ co }) => !co.country || co.country === "KR");
   let done = 0;
   // DART API 과부하 방지: 5개씩 청크로 나눠 순차 처리
   const chunkSize = 5;
